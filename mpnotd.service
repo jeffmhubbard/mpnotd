@@ -1,0 +1,11 @@
+[Unit]
+Description=MPD Notification Daemon
+After=network.target mpd.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/mpnotd --daemon
+Restart=on-failure
+
+[Install]
+WantedBy=default.target

@@ -1,0 +1,559 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+
+# mpnotd - MPD Notification Daemon
+
+import os
+from os import path, makedirs, remove, scandir
+from re import sub
+import sys
+import time
+import argparse
+import configparser
+import logging
+from glob import glob
+import notify2
+import json
+from xdg import BaseDirectory
+from mpd import MPDClient
+from bs4 import BeautifulSoup
+from urllib.parse import quote
+from urllib.request import urlopen, urlretrieve, Request
+
+__APP_NAME__ = "mpnotd"
+__APP_DESC__ = "MPD Notification Daemon"
+
+__APP_DIRS__ = {
+        'config': path.join(BaseDirectory.xdg_config_home, __APP_NAME__),
+        'cache': path.join(BaseDirectory.xdg_cache_home, __APP_NAME__),
+}
+
+DEBUG = False
+
+# Default configuration
+DEFAULTS = {
+    # Host name of MPD server
+    'host': 'localhost',
+    # Port number of MPD server
+    'port': 6600,
+    # Password (leave blank for no password)
+    'auth': '',
+    # Notification timeout in seconds
+    'time': 10,
+    # Path to log
+    'log': path.join(__APP_DIRS__['cache'], 'daemon.log'),
+    # Path to music folder
+    'music': '~/Music/',
+}
+
+
+class MpNotd:
+
+    # Load defaults
+    config = DEFAULTS
+    updating = False
+
+    def __init__(self, daemon=False, debug=False):
+        """MPD Notification Daemon
+
+        Args:
+            daemon (bool): Start main loop and wait for MPD state to change
+            debug (bool): Log debug messages
+
+        """
+
+        # Parse command line arguments
+        self.args = self.read_args()
+        
+        # Enable debugging messages
+        if self.args.DEBUG or debug == True:
+            global DEBUG
+            DEBUG = True
+
+        # Write config and quit
+        if self.args.writeini:
+            self.write_config()
+            sys.exit(0)
+
+        # Load user config
+        self.load_config()
+
+        # Start logging
+        self.log_start()
+
+        # Open MPD connection
+        self.mpd_start()
+
+        # Send password if set (untested)
+        if not self.config['auth'] == '':
+           self.mpd_auth(self.config['auth'])
+
+        # Call main loop
+        if self.args.daemon or daemon == True:
+
+            try:
+                self.daemon()
+            except Exception as e:
+                self.log.exception(e, exc_info=True)
+
+        # No args. Just display current song info and quit
+        else:
+            song = self.client.currentsong()
+            # Only show after tag data is read
+            if all (key in song for key in ("artist", "title", "album")):
+
+                # Show Notification
+                data = self.get_song_info(**song)
+                self.popup(**data)
+
+        # Close MPD connection and logging
+        self.mpd_end()
+        self.log.shutdown()
+
+
+    def load_config(self):
+        """Load user config
+        """
+
+        config = {}
+
+        # Override from user config
+        fname = path.join(__APP_DIRS__['config'], 'config')
+        if path.exists(fname):
+
+            uconf = configparser.ConfigParser(self.config)
+            uconf.read(fname)
+
+            # All keys are required for valid config
+            try:
+                for cvar in self.config.keys():
+                    config[cvar] = uconf.get(__APP_NAME__, cvar)
+                    self.config = config
+            except:
+                pass
+
+
+    def write_config(self):
+        """Write config file with defaults
+        """
+
+        filename = path.join(__APP_DIRS__['config'], 'config')
+
+        # Config already exists, print location
+        if path.exists(filename):
+            print("File exists! {}".format(filename))
+        else:
+            # Check for directory and create
+            self._makedirs(filename)
+
+            # Create parser and import defaults
+            default_conf = configparser.ConfigParser()
+            default_conf[__APP_NAME__] = DEFAULTS
+
+            # Write config
+            with open(filename, 'w') as new_conf:
+                default_conf.write(new_conf)
+                print("Config written to {}".format(filename))
+
+
+    def _makedirs(self, fname):
+        """Create directories for target file
+
+        Args:
+            fname (str): Path of destination file
+
+        """
+
+        fpath = path.dirname(path.expanduser(fname))
+        if path.exists(fpath):
+            pass
+        else:
+            try:
+                # Make directories
+                makedirs(fpath, exist_ok=True)
+            except OSError as e:
+                if e.errno != errno.EEXIST:
+                    raise
+                return False
+
+        return True
+
+
+    def read_args(self):
+        """Read command line arguments
+        """
+
+        parser = argparse.ArgumentParser(
+            prog=__APP_NAME__,
+            description='show current song info',)
+
+        # debug
+        parser.add_argument(
+                '--DEBUG',
+                action='store_true',
+                help="log debug messages")
+
+        group = parser.add_argument_group("useful arguments:")
+        mxg = group.add_mutually_exclusive_group()
+
+        # run as daemon
+        mxg.add_argument(
+                '--daemon',
+                action='store_true',
+                help="start as daemon")
+
+        # write a config file
+        mxg.add_argument(
+                '--writeini',
+                action='store_true',
+                help="write config file and quit")
+
+        return parser.parse_args(sys.argv[1:])
+
+
+    def mpd_start(self):
+        """Setup MPD connection
+        """
+        
+        host = self.config['host']
+        port = self.config['port']
+        
+        self.client = MPDClient()
+        self.client.connect(host, port)
+        self.log.debug("MPD connection established!")
+
+
+    def mpd_end(self):
+        """End MPD connection
+        """
+
+        self.client.close()
+        self.client.disconnect()
+        self.log.debug("MPD connection closed!")
+
+
+    def mpd_auth(self, password):
+        """Authenticate to MPD server
+
+        Args:
+            password (str): Plain text password
+
+        """
+
+        try:
+            self.client.password(password)
+            self.log.debug("MPD Auth accepted!")
+        except Exception as e:
+            self.log.exception("MPD Auth error: {}".format(e))
+            pass
+
+
+    def log_start(self):
+        """Setup logging
+        """
+
+        log_to = path.expanduser(path.join(
+            __APP_DIRS__['cache'],
+            'daemon.log'))
+
+        if not path.exists(log_to):
+            self._makedirs(log_to)
+
+        logging.basicConfig(
+                format='%(asctime)s %(message)s',
+                datefmt='%m/%d/%Y %I:%M:%S %p',
+                filename=log_to,
+                filemode='a')
+        self.log = logging.getLogger()
+
+        if DEBUG:
+            self.log.setLevel(logging.DEBUG)
+
+
+    def popup(self, summary=None, message=None, icon=None, **kwargs):
+        """Display notification
+
+        Build notification. Defaults are provided below so popup() can be
+        called with any number of arguments or even none.
+
+        Args:
+            summary (str): Notification title
+            message (str): Notification body
+            icon (str): Album art or icon
+        """
+
+        if not summary:
+            summary = __APP_NAME__
+        if not message:
+            messsage = ''
+        if not icon:
+            icon = 'image-missing'
+
+        notify2.init(summary)
+        popup = notify2.Notification(summary, message, icon)
+
+        # Set timeout
+        timeout = self.config['time']
+        if timeout:
+            popup.set_timeout(int(timeout) * 1000)
+        
+        # Display
+        popup.show()
+
+        
+
+    def get_song_info(self, title, artist, album, **kwargs):
+        """Get current song info
+
+        Args:
+            title (str): Song title
+            artist (str): Song artist
+            album (str): Song album
+
+        Returns:
+            Return `data` payload for popup()
+
+        """
+
+        data = {}
+
+        # format summary and message
+        summary = "<i>Playing...</i>"
+        message = "<b>{}</b>\nBy <b>{}</b>\nFrom <b>{}</b>".format(
+                title, artist, album)
+        icon = None
+    
+        # get album art
+        try:
+            icon = self.get_albumart(kwargs['file'], artist, album)
+        except Exception as e:
+            self.log.exception(e)
+            pass
+
+        # build payload
+        data['summary'] = summary
+        data['message'] = message
+        data['icon'] = icon
+
+        self.log.debug("get_song_info(): {}".format(data))
+        return data
+
+
+    def get_albumart(self, url, artist, album):
+        """Get album art
+
+        Determine if file is local or streaming. For local files we only
+        look in the `music` directory for images. For http streams we
+        only do image search. If neither happens, return None
+
+        Args:
+            url (str): MPD database path or http url
+            artist (str): Song artist
+            album (str): Song ablum
+
+        Returns:
+           File path as string or None 
+
+        """
+
+        icon = None
+
+        # streaming... try google search. slow 
+        if url.startswith('http'):
+
+            # get destination file path
+            img_temp = "cover-{}-{}.tmp".format(artist, album)
+            img_temp = sub('\s', '_', img_temp).lower()
+            img_path = path.join(__APP_DIRS__['cache'], img_temp)
+
+            # fetch image
+            if self.fetch_artwork(artist, album, img_path):
+                icon = img_path
+
+        # assume local file and search directories for images
+        else:
+            music_dir = path.expanduser(self.config['music'])
+            filepath = path.join(music_dir, url)
+            if path.exists(filepath):
+
+                # Get base directory of file
+                base_dir = path.dirname(filepath)
+
+                # search for matching extensions
+                for ext in ['jpg', 'png', 'jpeg']:
+                    try:
+                        img_match = glob("{}/*.{}".format(base_dir, ext))
+                    except:
+                        break
+
+                    # return first match
+                    if len(img_match) > 0:
+                        icon = files[0]
+
+        self.log.debug("get_albumart(): {}".format(icon))
+        return icon
+
+
+    def fetch_artwork(self, artist, album, dest):
+        '''Download album art for Google image search
+
+        This is slow but easy and free
+
+        Args:
+            artist (str): Song artist
+            album (str): Song album
+            dest (str): Path to save image
+
+        Returns:
+            True if image was downloaded, False otherwise
+
+        '''
+
+        # Where to cache image
+        img_cache = path.join(__APP_DIRS__['cache'], dest)
+
+        if self._makedirs(img_cache):
+
+            # Build search request
+            search_string = "album art {} {}".format(album, artist)
+            search_url = ("https://www.google.com/search?q=" +
+                   quote(search_string.encode('utf-8')) + "&source=lnms&tbm=isch")
+            search_agent = { 'User-Agent':
+                      '''Mozilla/5.0 (Windows NT 6.1; WOW64)
+                      AppleWebKit/537.36 (KHTML,like Gecko)
+                      Chrome/43.0.2357.134 Safari/537.36'''
+                     }
+    
+            # Return search results
+            results = BeautifulSoup(urlopen(
+                Request(search_url, headers=search_agent)),
+                "html.parser")
+    
+            # Find image on page
+            img_div = results.find("div", {"class": "rg_meta"})
+            img_url = json.loads(img_div.text)["ou"]
+
+            
+            try:
+                # Download image
+                urlretrieve(img_url, img_cache)
+                return True
+            except Exception as e:
+                self.log.debug(e)
+                return False
+
+
+    def clean_cache(self, limit=600):
+        """Remove cached images
+
+        Args:
+            limit (int): Number of hours to keep cached image
+
+        """
+
+        tmp_dir = path.expanduser(__APP_DIRS__['cache'])
+        use_by = time.time() - limit
+
+        for filename in os.listdir(tmp_dir):
+            filepath = path.join(tmp_dir, filename)
+            if filepath.endswith('.tmp') and path.getatime(filepath) < use_by:
+                os.remove(path.join(filepath))
+                
+
+    def daemon(self):
+        """Display notifications for changes to MPD subsystems
+        """
+
+        # get initial status and outputs
+        _status = self.client.status()
+        _outputs = self.client.outputs()
+
+        while True:
+
+            self.clean_cache()
+
+            data = {}
+
+            #
+            subsystems = self.client.idle('player', 'update', 'output')
+            for subsys in subsystems:
+
+                data['summary'] = __APP_NAME__
+                data['icon'] = 'rhythmbox-panel'
+
+                # Player state changed
+                if subsys == 'player':
+
+                    # get current status
+                    status = self.client.status()
+
+                    # get current state
+                    state = status.get('state', '')
+
+                    # player paused
+                    if state == 'pause':
+                        data['message'] = '<i>Playback paused...</i>'
+                        self.popup(**data)
+
+                    # player stopped
+                    elif state == 'stop':
+                        data['message'] = '<i>Playback stopped...</i>'
+                        data['icon'] = 'rhythmbox-notplaying'
+                        self._status = None
+                        self.popup(**data)
+
+                    # show current song
+                    elif state == 'play':
+                        song = self.client.currentsong()
+
+                        # Only show after tag data is read
+                        if all (key in song for key in ("artist", "title", "album")):
+
+                            # Show Notification
+                            data = self.get_song_info(**song)
+                            self.popup(**data)
+
+                    # save status
+                    _status = status
+
+                # Upadte state changed
+                elif subsys == 'update':
+                    if self.updating:
+                        data['message'] = message = "Database updated!"
+                        data['icon'] = 'checkbox-checked'
+                        self.updating = False
+                    else:
+                        data['message'] = "Updating database..."
+                        data['icon'] = 'content-loading'
+                        self.updating = True
+                    self.log.debug(message)
+                    self.popup(**data)
+
+                # Outputs changed
+                elif subsys == 'output':
+                    outputs = self.client.outputs()
+
+                    for _out, out in zip(_outputs, outputs):
+
+                        if _out['outputenabled'] != out['outputenabled']:
+
+                            if out['outputenabled'] == '1':
+                                message = 'Output {} enabled'.format(out['outputname'])
+                                data['message'] = message
+                                data['icon'] = 'dialog-info'
+                            else:
+                                message = 'Output {} disabled!'.format(out['outputname'])
+                                data['message'] = message
+                                data['icon'] = 'dialog-error'
+
+                            self.log.debug(message)
+                            self.popup(**data)
+
+                    _outputs = outputs
+
+
+if __name__ == "__main__":
+    MpNotd()
+
+
+# vim: set ft=python
