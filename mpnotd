@@ -3,8 +3,7 @@
 
 # mpnotd - MPD Notification Daemon
 
-import os
-from os import path, makedirs, remove, scandir
+from os import path, makedirs, remove, listdir
 from re import sub
 import sys
 import time
@@ -40,8 +39,6 @@ DEFAULTS = {
     'auth': '',
     # Notification timeout in seconds
     'time': 10,
-    # Path to log
-    'log': path.join(__APP_DIRS__['cache'], 'daemon.log'),
     # Path to music folder
     'music': '~/Music/',
 }
@@ -106,9 +103,8 @@ class MpNotd:
                 data = self.get_song_info(**song)
                 self.popup(**data)
 
-        # Close MPD connection and logging
+        # Close MPD connection
         self.mpd_end()
-        self.log.shutdown()
 
 
     def load_config(self):
@@ -454,10 +450,10 @@ class MpNotd:
         tmp_dir = path.expanduser(__APP_DIRS__['cache'])
         use_by = time.time() - limit
 
-        for filename in os.listdir(tmp_dir):
+        for filename in listdir(tmp_dir):
             filepath = path.join(tmp_dir, filename)
             if filepath.endswith('.tmp') and path.getatime(filepath) < use_by:
-                os.remove(path.join(filepath))
+                remove(path.join(filepath))
                 
 
     def daemon(self):
@@ -474,7 +470,7 @@ class MpNotd:
 
             data = {}
 
-            #
+            # Watch MPDClient.idle for changes
             subsystems = self.client.idle('player', 'update', 'output')
             for subsys in subsystems:
 
@@ -484,26 +480,26 @@ class MpNotd:
                 # Player state changed
                 if subsys == 'player':
 
-                    # get current status
+                    # Get current status
                     status = self.client.status()
 
-                    # get current state
+                    # Get current state
                     state = status.get('state', '')
 
-                    # player paused
+                    # Player paused
                     if state == 'pause':
                         data['message'] = '<i>Playback paused...</i>'
                         self.popup(**data)
 
-                    # player stopped
+                    # Player stopped
                     elif state == 'stop':
                         data['message'] = '<i>Playback stopped...</i>'
                         data['icon'] = 'rhythmbox-notplaying'
                         self._status = None
                         self.popup(**data)
 
-                    # show current song
-                    elif state == 'play':
+                    # Show current song
+                    elif state == 'play' or _status['songid'] != status['songid']:
                         song = self.client.currentsong()
 
                         # Only show after tag data is read
@@ -513,19 +509,25 @@ class MpNotd:
                             data = self.get_song_info(**song)
                             self.popup(**data)
 
-                    # save status
+                    # Save status
                     _status = status
 
                 # Upadte state changed
                 elif subsys == 'update':
+                    self.log.debug(subsys)
+
                     if self.updating:
-                        data['message'] = message = "Database updated!"
-                        data['icon'] = 'checkbox-checked'
+                        message = "Database updated!"
+                        icon = 'checkbox-checked'
                         self.updating = False
                     else:
-                        data['message'] = "Updating database..."
-                        data['icon'] = 'content-loading'
+                        message = "Updating database..."
+                        icon = 'content-loading'
                         self.updating = True
+
+                    data['message'] = message
+                    data['icon'] = icon
+
                     self.log.debug(message)
                     self.popup(**data)
 
