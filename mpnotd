@@ -338,9 +338,8 @@ class MpNotd:
     def get_albumart(self, url, artist, album):
         """Get album art
 
-        Determine if file is local or streaming. For local files we only
-        look in the `music` directory for images. For http streams we
-        only do image search. If neither happens, return None
+        Attempt to find album art. Return first match or None.
+        Looks in local media first, then tries web search.
 
         Args:
             url (str): MPD database path or http url
@@ -354,9 +353,30 @@ class MpNotd:
 
         icon = None
 
-        # streaming... try google search. slow 
-        if url.startswith('http'):
+        # Try to find image in local path (even for streams... who knows)
+        if not icon:
 
+            music_dir = path.expanduser(self.config['music'])
+            if url.startswith('http'):
+                base_dir = path.join(music_dir, artist, album)
+            else:
+                base_dir = path.dirname(path.join(music_dir, url))
+
+            if path.exists(base_dir):
+
+                # Search for matching extensions
+                for ext in ['jpg', 'png', 'jpeg']:
+                    try:
+                        img_match = glob("{}/*.{}".format(base_dir, ext))
+                    except:
+                        break
+
+                    # Return first match
+                    if len(img_match) > 0:
+                        icon = img_match[0]
+
+        # If not, search google
+        if not icon:
             # get destination file path
             img_temp = "cover-{}-{}.tmp".format(artist, album)
             img_temp = sub('\s', '_', img_temp).lower()
@@ -365,26 +385,6 @@ class MpNotd:
             # fetch image
             if self.fetch_artwork(artist, album, img_path):
                 icon = img_path
-
-        # assume local file and search directories for images
-        else:
-            music_dir = path.expanduser(self.config['music'])
-            filepath = path.join(music_dir, url)
-            if path.exists(filepath):
-
-                # Get base directory of file
-                base_dir = path.dirname(filepath)
-
-                # search for matching extensions
-                for ext in ['jpg', 'png', 'jpeg']:
-                    try:
-                        img_match = glob("{}/*.{}".format(base_dir, ext))
-                    except:
-                        break
-
-                    # return first match
-                    if len(img_match) > 0:
-                        icon = files[0]
 
         self.log.debug("get_albumart(): {}".format(icon))
         return icon
