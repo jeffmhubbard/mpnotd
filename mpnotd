@@ -96,7 +96,7 @@ class MpNotd:
         # No args. Just display current song info and quit
         else:
             song = self.client.currentsong()
-            # Only show after tag data is read
+            # Only show if tag data is read
             if all (key in song for key in ("artist", "title", "album")):
 
                 # Show Notification

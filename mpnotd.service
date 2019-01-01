@@ -4,7 +4,7 @@ After=network.target mpd.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/python3 /usr/local/bin/mpnotd --daemon
+ExecStart=/usr/bin/mpnotd --daemon
 Restart=on-failure
 
 [Install]
