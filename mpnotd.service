@@ -4,7 +4,7 @@ After=network.target mpd.service
 
 [Service]
 Type=simple
-ExecStart=/usr/bin/mpnotd --daemon
+ExecStart=/usr/bin/mpnotd
 Restart=on-failure
 
 [Install]
