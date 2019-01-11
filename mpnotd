@@ -92,7 +92,7 @@ class MpNotd:
         try:
             self.idle_loop()
         except Exception as e:
-            self.log.exception(e, exc_info=True)
+            self.log.debug(e, exc_info=True)
 
         # Close MPD connection
         self.mpd_end()
@@ -317,7 +317,22 @@ class MpNotd:
         return data
 
 
-    def get_albumart(self, url, artist, album):
+    def get_nextsong(self, status):
+        """Prefetch album art
+        """
+
+        next_id = status['nextsongid']
+        song = self.client.playlistid(next_id)[0]
+        url = song['file']
+        if 'name' in song:
+            artist, title, album = song['name'].split(' - ')
+        else:
+            artist = song['artist']
+            album = song['album']
+        return [url, artist, album]
+
+
+    def get_albumart(self, url, artist, album, *args):
         """Get album art
 
         Attempt to find album art. Return first match or None.
@@ -335,12 +350,13 @@ class MpNotd:
 
         icon = None
 
-        # get destination file path
+        # Get destination file path
         img_temp = "cover-{}-{}.tmp".format(artist, album)
         img_temp = sub('\s', '_', img_temp).lower()
         img_cache = path.join(__APP_DIRS__['cache'], img_temp)
         self.log.debug("img_cache: {}".format(img_cache))
 
+        # Check for cached image first
         if path.exists(img_cache):
             self.log.debug("img_cache exists")
             icon = img_cache
@@ -375,9 +391,7 @@ class MpNotd:
         # If not, search google
         if not icon:
             self.log.debug("Attempting web search!")
-            print(artist)
-            print(album)
-            print(img_cache)
+
             # fetch image
             if self.fetch_artwork(artist, album, img_cache):
                 icon = img_cache
@@ -421,8 +435,6 @@ class MpNotd:
             # Find image on page
             img_div = results.find("div", {"class": "rg_meta"})
             img_url = json.loads(img_div.text)["ou"]
-            print(img_url)
-
             
             try:
                 # Download image
@@ -475,7 +487,7 @@ class MpNotd:
             subsystems = self.client.idle('player', 'update', 'output')
             for subsys in subsystems:
                 data['summary'] = __APP_NAME__
-                data['icon'] = "rhythmbox-panel"
+                data['icon'] = 'rhythmbox-panel'
 
                 # Player state changed
                 if subsys == 'player':
@@ -489,6 +501,7 @@ class MpNotd:
                     # Player paused
                     if state == 'pause':
                         data['message'] = '<i>Playback paused...</i>'
+                        data['icon'] = 'rhythmbox-notplaying'
                         self.show_notification(**data)
 
                     # Player stopped
@@ -509,6 +522,10 @@ class MpNotd:
                             data = self.get_nowplaying(**song)
                             self.show_notification(**data)
 
+                            nextsong = self.get_nextsong(status)
+                            self.get_albumart(*nextsong)
+
+
                     # Save status
                     _status = status
 
@@ -517,18 +534,15 @@ class MpNotd:
                     self.log.debug(subsys)
 
                     if self.updating:
-                        message = "Database updated!"
-                        icon = 'checkbox-checked'
+                        data['message'] = "Database updated!"
+                        data['icon'] = 'checkbox-checked'
                         self.updating = False
                     else:
-                        message = "Updating database..."
-                        icon = 'content-loading'
+                        data['message'] = "Updating database..."
+                        data['icon'] = 'content-loading'
                         self.updating = True
 
-                    data['message'] = message
-                    data['icon'] = icon
-
-                    self.log.debug(message)
+                    self.log.debug(data['message'])
                     self.show_notification(**data)
 
                 # Outputs changed
@@ -540,15 +554,13 @@ class MpNotd:
                         if _out['outputenabled'] != out['outputenabled']:
 
                             if out['outputenabled'] == '1':
-                                message = 'Output {} enabled'.format(out['outputname'])
-                                data['message'] = message
+                                data['message'] = 'Output {} enabled'.format(out['outputname'])
                                 data['icon'] = 'dialog-info'
                             else:
-                                message = 'Output {} disabled!'.format(out['outputname'])
-                                data['message'] = message
+                                data['message'] = 'Output {} disabled!'.format(out['outputname'])
                                 data['icon'] = 'dialog-error'
 
-                            self.log.debug(message)
+                            self.log.debug(data['message'])
                             self.show_notification(**data)
 
                     _outputs = outputs
