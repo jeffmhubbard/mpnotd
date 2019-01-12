@@ -278,7 +278,6 @@ class MpNotd:
         # Display
         popup.show()
 
-        
 
     def get_nowplaying(self, title, artist, album, **kwargs):
         """Get current song info
@@ -305,7 +304,7 @@ class MpNotd:
         try:
             icon = self.get_albumart(kwargs['file'], artist, album)
         except Exception as e:
-            self.log.exception(e)
+            self.log.debug(e)
             pass
 
         # Build notification payload
@@ -318,7 +317,17 @@ class MpNotd:
 
 
     def get_nextsong(self, status):
-        """Prefetch album art
+        """Get next song info
+
+        Get next song info so we can precache album art
+        Returns list suitable for get_albumart(*args)
+
+        Args:
+            status (dict): current status
+
+        Returns:
+            Returns list (url, artist, album)
+
         """
 
         next_id = status['nextsongid']
@@ -336,7 +345,9 @@ class MpNotd:
         """Get album art
 
         Attempt to find album art. Return first match or None.
-        Looks in local media first, then tries web search.
+        First look for existing cached image.
+        Then try to find local image and copy that to cache.
+        Or try to locate via web search
 
         Args:
             url (str): MPD database path or http url
@@ -522,8 +533,12 @@ class MpNotd:
                             data = self.get_nowplaying(**song)
                             self.show_notification(**data)
 
-                            nextsong = self.get_nextsong(status)
-                            self.get_albumart(*nextsong)
+                            # Fetch album art for next song
+                            try:
+                                nextsong = self.get_nextsong(status)
+                                self.get_albumart(*nextsong)
+                            except:
+                                pass
 
 
                     # Save status
