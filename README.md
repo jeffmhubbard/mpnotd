@@ -25,14 +25,9 @@ After running `mpnotd --writeini`, you can edit your config
 file at `~/.config/mpnotd/config`
   
 > [mpnotd]  
-> # MPD hostname or IP address  
 > host = localhost  
-> # MPD port number  
 > port = 6600  
-> # Server password or leave blank  
 > auth = password  
-> # Time in seconds to display notification  
 > time = 10                  
-> # Path to local music directory  
 > music = /path/to/music   
   
