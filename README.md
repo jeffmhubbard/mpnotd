@@ -1,13 +1,20 @@
-# mpnotd
+# mpnotd  
 MPD Notification Daemon  
   
-### Requirements
+Watches MPD for status changes and displays notifications.  
+  
+  
+### Requirements  
 python3  
 python-mpd2  
 notify2  
 beautifulsoup4   
+Pillow  
   
-### Usage
+### Recommended
+dunst  
+  
+### Usage  
 Write config file:  
   `mpnotd --writeini`  
   
@@ -15,19 +22,19 @@ Enable systemd service:
   `systemctl --user start mpnotd`  
   `systemctl --user enable mpnotd`  
   
-### Arguments
+### Arguments  
 *  --writeini:      Write config file  
 *  --DEBUG:         Log debug messages  
 *  -h or --help:    Print help  
   
-### Configuration
+### Configuration  
 After running `mpnotd --writeini`, you can edit your config
 file at `~/.config/mpnotd/config`
   
 > [mpnotd]  
 > host = localhost  
 > port = 6600  
-> auth = password  
+> auth = password (leave blank for now password) 
 > time = 10                  
 > music = /path/to/music   
   
