@@ -296,7 +296,7 @@ class MpNotd:
         data = {}
         
         # Format summary and message
-        summary = "<i>Playing...</i>"
+        summary = "Playing..."
         message = "<b>{}</b>\nBy <b>{}</b>\nFrom <b>{}</b>".format(
                 title, artist, album)
         icon = None
