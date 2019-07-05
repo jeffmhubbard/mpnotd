@@ -3,29 +3,30 @@
 
 # mpnotd - MPD Notification Daemon
 
-from os import path, makedirs, remove, listdir
-from re import sub
-from shutil import copyfile
-import sys
-import time
 import argparse
 import configparser
-import logging
-from glob import glob
-import notify2
 import json
-from mpd import MPDClient
-from bs4 import BeautifulSoup
+import logging
+import sys
+import time
+from glob import glob
+from os import listdir, makedirs, path, remove
+from re import sub
+from shutil import copyfile
 from urllib.parse import quote
-from urllib.request import urlopen, urlretrieve, Request
+from urllib.request import Request, urlopen, urlretrieve
+
+import notify2
+from bs4 import BeautifulSoup
+from mpd import MPDClient
 from PIL import Image
 
 __APP_NAME__ = "mpnotd"
 __APP_DESC__ = "MPD Notification Daemon"
 
 __APP_DIRS__ = {
-        'config': path.join(path.expanduser('~/.config'), __APP_NAME__),
-        'cache': path.join(path.expanduser('~/.cache'), __APP_NAME__),
+    "config": path.join(path.expanduser("~/.config"), __APP_NAME__),
+    "cache": path.join(path.expanduser("~/.cache"), __APP_NAME__),
 }
 
 DEBUG = False
@@ -33,15 +34,15 @@ DEBUG = False
 # Default configuration
 DEFAULTS = {
     # Host name of MPD server
-    'host': 'localhost',
+    "host": "localhost",
     # Port number of MPD server
-    'port': 6600,
+    "port": 6600,
     # Password (leave blank for no password)
-    'auth': '',
+    "auth": "",
     # Notification timeout in seconds
-    'time': 10,
+    "time": 10,
     # Path to music folder
-    'music': '~/Music/',
+    "music": "~/Music/",
 }
 
 
@@ -61,14 +62,14 @@ class MpNotd:
 
         # Parse command line arguments
         self.args = self.read_args()
-        
+
         # Write config and quit
         if self.args.writeini:
             self.write_config()
             sys.exit(0)
 
         # Enable debugging messages
-        if self.args.DEBUG or debug == True:
+        if self.args.DEBUG or debug:
             global DEBUG
             DEBUG = True
 
@@ -77,18 +78,18 @@ class MpNotd:
 
         # Start logging
         self.log_start()
-        self.log.debug(u'\u2500'*80)
+        self.log.debug(u"\u2500" * 80)
 
         # Open MPD connection
         self.mpd_start()
 
         # If auth passed as arg, overwrite config
-        if not auth == None:
-            self.config['auth'] = auth
+        if auth is not None:
+            self.config["auth"] = auth
 
         # Send password if set (untested)
-        if not self.config['auth'] == '':
-           self.mpd_auth(self.config['auth'])
+        if not self.config["auth"] == "":
+            self.mpd_auth(self.config["auth"])
 
         try:
             self.idle_loop()
@@ -98,7 +99,6 @@ class MpNotd:
         # Close MPD connection
         self.mpd_end()
 
-
     def load_config(self):
         """Load user config
         """
@@ -106,7 +106,8 @@ class MpNotd:
         config = {}
 
         # Override from user config
-        fname = path.join(__APP_DIRS__['config'], 'config')
+        fname = path.join(__APP_DIRS__["config"], "config")
+
         if path.exists(fname):
 
             uconf = configparser.ConfigParser(self.config)
@@ -117,15 +118,14 @@ class MpNotd:
                 for cvar in self.config.keys():
                     config[cvar] = uconf.get(__APP_NAME__, cvar)
                     self.config = config
-            except:
+            except Exception:
                 pass
-
 
     def write_config(self):
         """Write config file with defaults
         """
 
-        filename = path.join(__APP_DIRS__['config'], 'config')
+        filename = path.join(__APP_DIRS__["config"], "config")
 
         # Config already exists, print location
         if path.exists(filename):
@@ -139,10 +139,9 @@ class MpNotd:
             default_conf[__APP_NAME__] = DEFAULTS
 
             # Write config
-            with open(filename, 'w') as new_conf:
+            with open(filename, "w") as new_conf:
                 default_conf.write(new_conf)
                 print("Config written to {}".format(filename))
-
 
     def _makedirs(self, dest):
         """Create directories for target file
@@ -153,6 +152,7 @@ class MpNotd:
         """
 
         base_dir = path.dirname(path.expanduser(dest))
+
         if path.exists(base_dir):
             return
         else:
@@ -162,44 +162,38 @@ class MpNotd:
                 if e.errno != errno.EEXIST:
                     raise
 
-
     def read_args(self):
         """Read command line arguments
         """
 
-        parser = argparse.ArgumentParser(
-            prog=__APP_NAME__,
-            description='show current song info',)
+        parser = argparse.ArgumentParser(prog=__APP_NAME__,
+                                         description="show current song info")
 
         group = parser.add_argument_group("useful arguments:")
         mxg = group.add_mutually_exclusive_group()
 
         # debug
-        mxg.add_argument(
-                '--DEBUG',
-                action='store_true',
-                help="log debug messages")
+        mxg.add_argument("--DEBUG",
+                         action="store_true",
+                         help="log debug messages")
 
         # write a config file
-        mxg.add_argument(
-                '--writeini',
-                action='store_true',
-                help="write config file and quit")
+        mxg.add_argument("--writeini",
+                         action="store_true",
+                         help="write config file and quit")
 
         return parser.parse_args(sys.argv[1:])
-
 
     def mpd_start(self):
         """Setup MPD connection
         """
-        
-        host = self.config['host']
-        port = self.config['port']
-        
+
+        host = self.config["host"]
+        port = self.config["port"]
+
         self.client = MPDClient()
         self.client.connect(host, port)
         self.log.debug("MPD connection established!")
-
 
     def mpd_end(self):
         """End MPD connection
@@ -208,7 +202,6 @@ class MpNotd:
         self.client.close()
         self.client.disconnect()
         self.log.debug("MPD connection closed!")
-
 
     def mpd_auth(self, password):
         """Authenticate to MPD server
@@ -225,34 +218,35 @@ class MpNotd:
             self.log.exception("MPD Auth error: {}".format(e))
             pass
 
-
     def log_start(self):
         """Setup logging
         """
 
-        log_to = path.expanduser(path.join(
-            __APP_DIRS__['cache'],
-            'debug.log'))
+        log_to = path.expanduser(path.join(__APP_DIRS__["cache"], "debug.log"))
 
         if not path.exists(log_to):
             self._makedirs(log_to)
 
         logging.basicConfig(
-                format='%(asctime)s %(message)s',
-                datefmt='%m/%d/%Y %I:%M:%S %p',
-                filename=log_to,
-                filemode='w')
+            format="%(asctime)s %(message)s",
+            datefmt="%m/%d/%Y %I:%M:%S %p",
+            filename=log_to,
+            filemode="w",
+        )
         self.log = logging.getLogger()
 
         if DEBUG:
             self.log.setLevel(logging.DEBUG)
 
-
-    def show_notification(self, summary=None, message=None, icon=None, **kwargs):
+    def show_notification(self,
+                          summary=None,
+                          message=None,
+                          icon=None,
+                          **kwargs):
         """Display notification
 
-        Build notification. Defaults are provided below so show_notification() can be
-        called with any number of arguments or even none.
+        Build notification. Defaults are provided below so show_notification()
+        can be called with any number of arguments or even none.
 
         Args:
             summary (str): Notification title
@@ -263,22 +257,24 @@ class MpNotd:
         # Defaults
         if not summary:
             summary = __APP_NAME__
+
         if not message:
-            messsage = ''
+            message = ""
+
         if not icon:
-            icon = 'image-missing'
+            icon = "image-missing"
 
         notify2.init(summary)
         popup = notify2.Notification(summary, message, icon)
 
         # Set timeout
-        timeout = self.config['time']
+        timeout = self.config["time"]
+
         if timeout:
             popup.set_timeout(int(timeout) * 1000)
-        
+
         # Display
         popup.show()
-
 
     def get_nowplaying(self, title, artist, album, **kwargs):
         """Get current song info
@@ -294,28 +290,28 @@ class MpNotd:
         """
 
         data = {}
-        
+
         # Format summary and message
         summary = "Playing..."
         message = "<b>{}</b>\nBy <b>{}</b>\nFrom <b>{}</b>".format(
-                title, artist, album)
+            title, artist, album)
         icon = None
-    
+
         # Get album art
         try:
-            icon = self.get_albumart(kwargs['file'], artist, album)
+            icon = self.get_albumart(kwargs["file"], artist, album)
         except Exception as e:
             self.log.debug(e)
             pass
 
         # Build notification payload
-        data['summary'] = summary
-        data['message'] = message
-        data['icon'] = icon
+        data["summary"] = summary
+        data["message"] = message
+        data["icon"] = icon
 
         self.log.debug("Now Playing: {}".format(data))
-        return data
 
+        return data
 
     def get_nextsong(self, status):
         """Get next song info
@@ -331,16 +327,17 @@ class MpNotd:
 
         """
 
-        next_id = status['nextsongid']
+        next_id = status["nextsongid"]
         song = self.client.playlistid(next_id)[0]
-        url = song['file']
-        if 'name' in song:
-            artist, title, album = song['name'].split(' - ')
-        else:
-            artist = song['artist']
-            album = song['album']
-        return [url, artist, album]
+        url = song["file"]
 
+        if "name" in song:
+            artist, title, album = song["name"].split(" - ")
+        else:
+            artist = song["artist"]
+            album = song["album"]
+
+        return [url, artist, album]
 
     def get_albumart(self, url, artist, album, *args):
         """Get album art thumbnail
@@ -360,21 +357,20 @@ class MpNotd:
 
         """
 
-        thumbnail = None
-
         # Get destination file path
         filename = "cover-{}-{}.png".format(artist, album)
-        filename = sub('\s', '_', filename).lower()
-        filepath = path.join(__APP_DIRS__['cache'], filename)
+        filename = sub("\s", "_", filename).lower()
+        filepath = path.join(__APP_DIRS__["cache"], filename)
         self.log.debug("Cache Dest: {}".format(filepath))
 
         # Check for cached image first
         if path.exists(filepath):
             self.log.debug("Found image: {}".format(filepath))
+
             return filepath
 
         # Temp file
-        self.tmp_file = path.join(__APP_DIRS__['cache'], 'artwork.tmp')
+        self.tmp_file = path.join(__APP_DIRS__["cache"], "artwork.tmp")
 
         # Remove old cache
         if path.exists(self.tmp_file):
@@ -389,23 +385,21 @@ class MpNotd:
 
         # Try to find image in local path (even for streams... who knows)
         self.log.debug("Searching filesystem")
+
         if self.find_artwork(url, artist, album):
             if _mkthumb(self.tmp_file, filepath):
                 return filepath
 
         # If not, search google
         self.log.debug("Searching web")
+
         if self.fetch_artwork(artist, album):
             if _mkthumb(self.tmp_file, filepath):
-                return filepath 
-
-        #self.log.debug("Album Art: {}".format(thumbnail))
-        #return thumbnail
-
+                return filepath
 
     def find_artwork(self, url, artist=None, album=None):
         """Search filesystem for artwork
-        
+
         If `url` starts with HTTP, we assume we're streaming and
         make a guess on where to find artwork (music_dir/artist/album/)
         If `url` is a local path, just look in the same directory
@@ -420,9 +414,10 @@ class MpNotd:
         """
 
         # Build search path
-        music_dir = path.expanduser(self.config['music'])
+        music_dir = path.expanduser(self.config["music"])
         # If streaming... Guess!
-        if url.startswith('http'):
+
+        if url.startswith("http"):
             base_dir = path.join(music_dir, artist, album)
         # If local, use it
         else:
@@ -431,18 +426,20 @@ class MpNotd:
 
         if path.exists(base_dir):
             # Search for matching extensions
-            for ext in ['png', 'jpg', 'jpeg']:
+            for ext in ["png", "jpg", "jpeg"]:
                 img_match = glob("{}/*.{}".format(base_dir, ext))
 
                 # Return first match
+
                 if len(img_match) > 0:
                     copyfile(img_match[0], self.tmp_file)
-                    self.log.debug("Local image found: {}".format(img_match[0]))
+                    self.log.debug("Local image found: {}".format(
+                        img_match[0]))
+
                     return True
 
-
     def fetch_artwork(self, artist, album):
-        '''Search web for artwork
+        """Search web for artwork
 
         This is slow but easy and free
 
@@ -453,23 +450,23 @@ class MpNotd:
         Returns:
             True if image was downloaded, False otherwise
 
-        '''
-
+        """
 
         # Build search request
         search_string = "album art {} {}".format(album, artist)
         search_url = ("https://www.google.com/search?q=" +
-               quote(search_string.encode('utf-8')) + "&source=lnms&tbm=isch")
-        search_agent = { 'User-Agent':
-                  '''Mozilla/5.0 (Windows NT 6.1; WOW64)
+                      quote(search_string.encode("utf-8")) +
+                      "&source=lnms&tbm=isch")
+        search_agent = {
+            "User-Agent":
+            """Mozilla/5.0 (Windows NT 6.1; WOW64)
                   AppleWebKit/537.36 (KHTML,like Gecko)
-                  Chrome/43.0.2357.134 Safari/537.36'''
-                 }
+                  Chrome/43.0.2357.134 Safari/537.36"""
+        }
 
         # Return search results
-        results = BeautifulSoup(urlopen(
-            Request(search_url, headers=search_agent)),
-            "html.parser")
+        results = BeautifulSoup(
+            urlopen(Request(search_url, headers=search_agent)), "html.parser")
 
         # Find image on page
         img_div = results.find("div", {"class": "rg_meta"})
@@ -477,8 +474,8 @@ class MpNotd:
 
         urlretrieve(img_url, self.tmp_file)
         self.log.debug("Search image found: {}".format(self.tmp_file))
-        return True
 
+        return True
 
     def clean_cache(self, limit=1):
         """Remove cached images
@@ -490,16 +487,16 @@ class MpNotd:
 
         limit *= 3600
 
-        tmp_dir = path.expanduser(__APP_DIRS__['cache'])
+        tmp_dir = path.expanduser(__APP_DIRS__["cache"])
         use_by = time.time() - limit
         self.log.debug("Cache Age: {}".format(use_by))
 
         for filename in listdir(tmp_dir):
             filepath = path.join(tmp_dir, filename)
-            if filepath.endswith('.png') and path.getatime(filepath) < use_by:
+
+            if filepath.endswith(".png") and path.getatime(filepath) < use_by:
                 self.log.debug("Removing: {}".format(filepath))
                 remove(path.join(filepath))
-                
 
     def idle_loop(self):
         """Display notifications for changes to MPD subsystems
@@ -517,41 +514,45 @@ class MpNotd:
             data = {}
 
             # Watch MPDClient.idle for changes
-            subsystems = self.client.idle('player', 'update', 'output')
+            subsystems = self.client.idle("player", "update", "output")
+
             for subsys in subsystems:
                 self.log.debug("Subsys: {}".format(subsys))
-                data['summary'] = __APP_NAME__
-                data['icon'] = 'rhythmbox-panel'
+                data["summary"] = __APP_NAME__
+                data["icon"] = "rhythmbox-panel"
 
                 # Player state changed
-                if subsys == 'player':
+                if subsys == "player":
 
                     # Get current status
                     status = self.client.status()
 
                     # Get current state
-                    state = status.get('state', '')
+                    state = status.get("state", "")
 
                     self.log.debug("Player: {}".format(state))
+
                     # Player paused
-                    if state == 'pause':
-                        data['message'] = '<i>Playback paused...</i>'
-                        data['icon'] = 'rhythmbox-notplaying'
+                    if state == "pause":
+                        data["message"] = "<i>Playback paused...</i>"
+                        data["icon"] = "rhythmbox-notplaying"
                         self.show_notification(**data)
 
                     # Player stopped
-                    elif state == 'stop':
-                        data['message'] = '<i>Playback stopped...</i>'
-                        data['icon'] = 'rhythmbox-notplaying'
+                    elif state == "stop":
+                        data["message"] = "<i>Playback stopped...</i>"
+                        data["icon"] = "rhythmbox-notplaying"
                         self._status = None
                         self.show_notification(**data)
 
                     # Show current song
-                    elif state == 'play' or _status['songid'] != status['songid']:
+                    elif state == "play" or _status["songid"] != status[
+                            "songid"]:
                         song = self.client.currentsong()
 
                         # Only show after tag data is read
-                        if all (key in song for key in ("artist", "title", "album")):
+                        if all(key in song
+                               for key in ("artist", "title", "album")):
 
                             # Show Notification
                             data = self.get_nowplaying(**song)
@@ -561,43 +562,45 @@ class MpNotd:
                             try:
                                 nextsong = self.get_nextsong(status)
                                 self.get_albumart(*nextsong)
-                            except:
+                            except Exception:
                                 pass
 
                     # Save status
                     _status = status
 
                 # Upadte state changed
-                elif subsys == 'update':
+                elif subsys == "update":
 
                     if self.updating:
-                        data['message'] = "Database updated!"
-                        data['icon'] = 'checkbox-checked'
+                        data["message"] = "Database updated!"
+                        data["icon"] = "checkbox-checked"
                         self.updating = False
                     else:
-                        data['message'] = "Updating database..."
-                        data['icon'] = 'content-loading'
+                        data["message"] = "Updating database..."
+                        data["icon"] = "content-loading"
                         self.updating = True
 
-                    self.log.debug(data['message'])
+                    self.log.debug(data["message"])
                     self.show_notification(**data)
 
                 # Outputs changed
-                elif subsys == 'output':
+                elif subsys == "output":
                     outputs = self.client.outputs()
 
                     for _out, out in zip(_outputs, outputs):
 
-                        if _out['outputenabled'] != out['outputenabled']:
+                        if _out["outputenabled"] != out["outputenabled"]:
 
-                            if out['outputenabled'] == '1':
-                                data['message'] = 'Output {} enabled'.format(out['outputname'])
-                                data['icon'] = 'dialog-info'
+                            if out["outputenabled"] == "1":
+                                data["message"] = "Output {} enabled".format(
+                                    out["outputname"])
+                                data["icon"] = "dialog-info"
                             else:
-                                data['message'] = 'Output {} disabled!'.format(out['outputname'])
-                                data['icon'] = 'dialog-error'
+                                data["message"] = "Output {} disabled!".format(
+                                    out["outputname"])
+                                data["icon"] = "dialog-error"
 
-                            self.log.debug(data['message'])
+                            self.log.debug(data["message"])
                             self.show_notification(**data)
 
                     _outputs = outputs
@@ -605,6 +608,5 @@ class MpNotd:
 
 if __name__ == "__main__":
     MpNotd()
-
 
 # vim: set ft=python
