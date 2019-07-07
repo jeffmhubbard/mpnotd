@@ -19,8 +19,8 @@ Write config file:
   `mpnotd --writeini`  
   
 Enable systemd service:  
-  `systemctl --user start mpnotd`  
   `systemctl --user enable mpnotd`  
+  `systemctl --user start mpnotd`  
   
 ### Arguments  
 *  --writeini:      Write config file  

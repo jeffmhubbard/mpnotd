@@ -3,14 +3,12 @@
 
 # mpnotd - MPD Notification Daemon
 
-import argparse
-import configparser
 import json
 import logging
 import sys
 import time
 from glob import glob
-from os import listdir, makedirs, path, remove
+from os import listdir, path, remove
 from re import sub
 from shutil import copyfile
 from urllib.parse import quote
@@ -21,12 +19,20 @@ from bs4 import BeautifulSoup
 from mpd import MPDClient
 from PIL import Image
 
-__APP_NAME__ = "mpnotd"
-__APP_DESC__ = "MPD Notification Daemon"
+from utils import (
+        read_args,
+        load_config,
+        write_config,
+        _makedirs,
+        clean_cache)
 
-__APP_DIRS__ = {
-    "config": path.join(path.expanduser("~/.config"), __APP_NAME__),
-    "cache": path.join(path.expanduser("~/.cache"), __APP_NAME__),
+APP_NAME = "mpnotd"
+APP_DESC = "MPD Notification Daemon"
+
+APP_DIRS = {
+    "cache": path.join(path.expanduser("~/.cache"), APP_NAME),
+    "config": path.join(path.expanduser("~/.config"), APP_NAME),
+    "plugins": path.join(path.expanduser("~/.config"), APP_NAME, "plugins"),
 }
 
 DEBUG = False
@@ -49,6 +55,9 @@ DEFAULTS = {
 class MpNotd:
 
     # Load defaults
+    name = APP_NAME
+    desc = APP_DESC
+    paths = APP_DIRS
     config = DEFAULTS
     updating = False
 
@@ -61,33 +70,46 @@ class MpNotd:
         """
 
         # Parse command line arguments
-        self.args = self.read_args()
+        self.args = read_args(
+                self.name,
+                self.desc)
 
         # Write config and quit
+
         if self.args.writeini:
-            self.write_config()
+            write_config(
+                self.name,
+                self.paths,
+                self.config)
+
             sys.exit(0)
 
         # Enable debugging messages
+
         if self.args.DEBUG or debug:
             global DEBUG
             DEBUG = True
 
         # Load user config
-        self.load_config()
+        self.config = load_config(
+                self.name,
+                self.paths,
+                self.config)
 
         # Start logging
         self.log_start()
-        self.log.debug(u"\u2500" * 80)
+        self.log.debug(u"\u2500" * 79)
 
         # Open MPD connection
         self.mpd_start()
 
         # If auth passed as arg, overwrite config
+
         if auth is not None:
             self.config["auth"] = auth
 
         # Send password if set (untested)
+
         if not self.config["auth"] == "":
             self.mpd_auth(self.config["auth"])
 
@@ -99,90 +121,27 @@ class MpNotd:
         # Close MPD connection
         self.mpd_end()
 
-    def load_config(self):
-        """Load user config
-        """
-
-        config = {}
-
-        # Override from user config
-        fname = path.join(__APP_DIRS__["config"], "config")
-
-        if path.exists(fname):
-
-            uconf = configparser.ConfigParser(self.config)
-            uconf.read(fname)
-
-            # All keys are required for valid config
-            try:
-                for cvar in self.config.keys():
-                    config[cvar] = uconf.get(__APP_NAME__, cvar)
-                    self.config = config
-            except Exception:
-                pass
-
-    def write_config(self):
-        """Write config file with defaults
-        """
-
-        filename = path.join(__APP_DIRS__["config"], "config")
-
-        # Config already exists, print location
-        if path.exists(filename):
-            print("File exists! {}".format(filename))
-        else:
-            # Check for directory and create
-            self._makedirs(filename)
-
-            # Create parser and import defaults
-            default_conf = configparser.ConfigParser()
-            default_conf[__APP_NAME__] = DEFAULTS
-
-            # Write config
-            with open(filename, "w") as new_conf:
-                default_conf.write(new_conf)
-                print("Config written to {}".format(filename))
-
-    def _makedirs(self, dest):
-        """Create directories for target file
-
-        Args:
-            dest (str): Path of destination file
-
-        """
-
-        base_dir = path.dirname(path.expanduser(dest))
-
-        if path.exists(base_dir):
-            return
-        else:
-            try:
-                makedirs(base_dir, exist_ok=True)
-            except OSError as e:
-                if e.errno != errno.EEXIST:
-                    raise
-
-    def read_args(self):
-        """Read command line arguments
-        """
-
-        parser = argparse.ArgumentParser(prog=__APP_NAME__,
-                                         description="show current song info")
-
-        group = parser.add_argument_group("useful arguments:")
-        mxg = group.add_mutually_exclusive_group()
-
-        # debug
-        mxg.add_argument("--DEBUG",
-                         action="store_true",
-                         help="log debug messages")
-
-        # write a config file
-        mxg.add_argument("--writeini",
-                         action="store_true",
-                         help="write config file and quit")
-
-        return parser.parse_args(sys.argv[1:])
+#    def read_args(self):
+#        """Read command line arguments
+#        """
+#
+#        parser = argparse.ArgumentParser(prog=self.name,
+#                                         description="show current song info")
+#
+#        group = parser.add_argument_group("useful arguments:")
+#        mxg = group.add_mutually_exclusive_group()
+#
+#        # debug
+#        mxg.add_argument("--DEBUG",
+#                         action="store_true",
+#                         help="log debug messages")
+#
+#        # write a config file
+#        mxg.add_argument("--writeini",
+#                         action="store_true",
+#                         help="write config file and quit")
+#
+#        return parser.parse_args(sys.argv[1:])
 
     def mpd_start(self):
         """Setup MPD connection
@@ -222,10 +181,10 @@ class MpNotd:
         """Setup logging
         """
 
-        log_to = path.expanduser(path.join(__APP_DIRS__["cache"], "debug.log"))
+        log_to = path.join(self.paths["cache"], "debug.log")
 
         if not path.exists(log_to):
-            self._makedirs(log_to)
+            _makedirs(log_to)
 
         logging.basicConfig(
             format="%(asctime)s %(message)s",
@@ -255,8 +214,9 @@ class MpNotd:
         """
 
         # Defaults
+
         if not summary:
-            summary = __APP_NAME__
+            summary = self.name
 
         if not message:
             message = ""
@@ -360,19 +320,20 @@ class MpNotd:
         # Get destination file path
         filename = "cover-{}-{}.png".format(artist, album)
         filename = sub("\s", "_", filename).lower()
-        filepath = path.join(__APP_DIRS__["cache"], filename)
+        filepath = path.join(self.paths["cache"], filename)
         self.log.debug("Cache Dest: {}".format(filepath))
 
         # Check for cached image first
+
         if path.exists(filepath):
             self.log.debug("Found image: {}".format(filepath))
 
             return filepath
 
         # Temp file
-        self.tmp_file = path.join(__APP_DIRS__["cache"], "artwork.tmp")
+        self.tmp_file = path.join(self.paths["cache"], "artwork.tmp")
 
-        # Remove old cache
+        # Remove cached artwork
         if path.exists(self.tmp_file):
             remove(self.tmp_file)
             self.log.debug("Purge tmp: {}".format(self.tmp_file))
@@ -426,6 +387,7 @@ class MpNotd:
 
         if path.exists(base_dir):
             # Search for matching extensions
+
             for ext in ["png", "jpg", "jpeg"]:
                 img_match = glob("{}/*.{}".format(base_dir, ext))
 
@@ -477,27 +439,6 @@ class MpNotd:
 
         return True
 
-    def clean_cache(self, limit=1):
-        """Remove cached images
-
-        Args:
-            limit (int): Number of hours to keep cached image
-
-        """
-
-        limit *= 3600
-
-        tmp_dir = path.expanduser(__APP_DIRS__["cache"])
-        use_by = time.time() - limit
-        self.log.debug("Cache Age: {}".format(use_by))
-
-        for filename in listdir(tmp_dir):
-            filepath = path.join(tmp_dir, filename)
-
-            if filepath.endswith(".png") and path.getatime(filepath) < use_by:
-                self.log.debug("Removing: {}".format(filepath))
-                remove(path.join(filepath))
-
     def idle_loop(self):
         """Display notifications for changes to MPD subsystems
         """
@@ -509,7 +450,7 @@ class MpNotd:
         while True:
 
             # Clean cached artwork
-            self.clean_cache()
+            clean_cache(self.path, self.log)
 
             data = {}
 
@@ -518,10 +459,11 @@ class MpNotd:
 
             for subsys in subsystems:
                 self.log.debug("Subsys: {}".format(subsys))
-                data["summary"] = __APP_NAME__
+                data["summary"] = self.name
                 data["icon"] = "rhythmbox-panel"
 
                 # Player state changed
+
                 if subsys == "player":
 
                     # Get current status
@@ -533,6 +475,7 @@ class MpNotd:
                     self.log.debug("Player: {}".format(state))
 
                     # Player paused
+
                     if state == "pause":
                         data["message"] = "<i>Playback paused...</i>"
                         data["icon"] = "rhythmbox-notplaying"
@@ -551,6 +494,7 @@ class MpNotd:
                         song = self.client.currentsong()
 
                         # Only show after tag data is read
+
                         if all(key in song
                                for key in ("artist", "title", "album")):
 
