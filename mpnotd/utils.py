@@ -1,23 +1,27 @@
-from os import path, makedirs
-import sys
+# -*- coding: utf-8 -*-
+
+"""Utility methods"""
+
 import argparse
 import configparser
+import errno
+import logging
+import sys
+import time
+from os import listdir, makedirs, path, remove
+
 
 def read_args(name, desc):
     """Read command line arguments
     """
 
-    parser = argparse.ArgumentParser(
-            prog=name,
-            description=desc)
+    parser = argparse.ArgumentParser(prog=name, description=desc)
 
     group = parser.add_argument_group("useful arguments:")
     mxg = group.add_mutually_exclusive_group()
 
     # debug
-    mxg.add_argument("--DEBUG",
-                     action="store_true",
-                     help="log debug messages")
+    mxg.add_argument("--DEBUG", action="store_true", help="log debug messages")
 
     # write a config file
     mxg.add_argument("--writeini",
@@ -25,6 +29,7 @@ def read_args(name, desc):
                      help="write config file and quit")
 
     return parser.parse_args(sys.argv[1:])
+
 
 def load_config(name, paths, defaults):
     """Load user config
@@ -36,17 +41,15 @@ def load_config(name, paths, defaults):
     fname = path.join(paths["config"], "config")
 
     if path.exists(fname):
-
         uconf = configparser.ConfigParser(defaults)
         uconf.read(fname)
 
         # All keys are required for valid config
-        try:
-            for cvar in defaults.keys():
-                config[cvar] = uconf.get(name, cvar)
-            return config
-        except Exception:
-            pass
+        for cvar in defaults.keys():
+            config[cvar] = uconf.get(name, cvar)
+
+    return config
+
 
 def write_config(name, paths, defaults):
     """Write config file with defaults
@@ -70,6 +73,30 @@ def write_config(name, paths, defaults):
             default_conf.write(new_conf)
             print("Config written to {}".format(filename))
 
+
+def get_logger(paths, debug):
+    """Setup logging
+    """
+
+    log_to = path.join(paths["cache"], "debug.log")
+
+    if not path.exists(log_to):
+        _makedirs(log_to)
+
+    logging.basicConfig(
+        format="%(asctime)s %(message)s",
+        datefmt="%m/%d/%Y %I:%M:%S %p",
+        filename=log_to,
+        filemode="w",
+    )
+    log = logging.getLogger()
+
+    if debug:
+        log.setLevel(logging.DEBUG)
+
+    return log
+
+
 def _makedirs(dest):
     """Create directories for target file
 
@@ -80,14 +107,13 @@ def _makedirs(dest):
 
     base_dir = path.dirname(path.expanduser(dest))
 
-    if path.exists(base_dir):
-        return
-    else:
+    if not path.exists(base_dir):
         try:
             makedirs(base_dir, exist_ok=True)
-        except OSError as e:
-            if e.errno != errno.EEXIST:
+        except OSError as md_error:
+            if md_error.errno != errno.EEXIST:
                 raise
+
 
 def clean_cache(paths, log, limit=1):
     """Remove cached images
@@ -109,4 +135,3 @@ def clean_cache(paths, log, limit=1):
         if filepath.endswith(".png") and path.getatime(filepath) < use_by:
             log.debug("Removing: {}".format(filepath))
             remove(path.join(filepath))
-

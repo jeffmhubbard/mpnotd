@@ -2,5 +2,6 @@
 *.swp
 test.py
 *.pyc
+/build/
 /dist/
 /*.egg-info
