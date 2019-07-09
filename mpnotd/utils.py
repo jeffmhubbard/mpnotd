@@ -115,7 +115,7 @@ def _makedirs(dest):
                 raise
 
 
-def clean_cache(paths, log, limit=1):
+def clean_cache(paths, log, limit=100):
     """Remove cached images
 
     Args:

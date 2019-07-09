@@ -8,10 +8,11 @@ import sys
 from os import path
 
 import notify2
-from mpd import MPDClient
 
-from artwork import get_albumart
-from utils import clean_cache, get_logger, load_config, read_args, write_config
+from .artwork import get_albumart
+from .client import get_client, auth_client, quit_client
+from .utils import clean_cache, get_logger
+from .utils import load_config, read_args, write_config
 
 APP_NAME = "mpnotd"
 APP_DESC = "MPD Notification Daemon"
@@ -19,6 +20,7 @@ APP_DIRS = {
     "cache": path.join(path.expanduser("~/.cache"), APP_NAME),
     "config": path.join(path.expanduser("~/.config"), APP_NAME),
     "plugins": path.join(path.expanduser("~/.config"), APP_NAME, "plugins"),
+    "run": path.dirname(path.realpath(__file__)),
 }
 
 DEBUG = False
@@ -76,7 +78,7 @@ class MpNotd(object):
         self.log.debug(u"\u2500" * 50)
 
         # Open MPD connection
-        self.mpd_start()
+        self.client = get_client(self)
 
         # If auth passed as arg, overwrite config
         if auth is not None:
@@ -84,49 +86,51 @@ class MpNotd(object):
 
         # Send password if set (untested)
         if not self.config["auth"] == "":
-            self.mpd_auth(self.config["auth"])
+            auth_client(self)
 
         try:
-            self.idle_loop()
+            self.mpd_events()
         except Exception as e:
             self.log.debug(e, exc_info=True)
+        except (KeyboardInterrupt, SystemExit):
+            sys.exit(1)
 
         # Close MPD connection
-        self.mpd_end()
+        quit_client()
 
-    def mpd_start(self):
-        """Setup MPD connection
-        """
-
-        host = self.config["host"]
-        port = self.config["port"]
-
-        self.client = MPDClient()
-        self.client.connect(host, port)
-        self.log.debug("MPD connection established!")
-
-    def mpd_end(self):
-        """End MPD connection
-        """
-
-        self.client.close()
-        self.client.disconnect()
-        self.log.debug("MPD connection closed!")
-
-    def mpd_auth(self, password):
-        """Authenticate to MPD server
-
-        Args:
-            password (str): Plain text password
-
-        """
-
-        try:
-            self.client.password(password)
-            self.log.debug("MPD Auth accepted!")
-        except Exception as e:
-            self.log.exception("MPD Auth error: {}".format(e))
-            pass
+#    def get_client(self):
+#        """Setup MPD connection
+#        """
+#
+#        host = self.config["host"]
+#        port = self.config["port"]
+#
+#        self.client = MPDClient()
+#        self.client.connect(host, port)
+#        self.log.debug("MPD connection established!")
+#
+#    def quit_client(self):
+#        """End MPD connection
+#        """
+#
+#        self.client.close()
+#        self.client.disconnect()
+#        self.log.debug("MPD connection closed!")
+#
+#    def auth_client(self, password):
+#        """Authenticate to MPD server
+#
+#        Args:
+#            password (str): Plain text password
+#
+#        """
+#
+#        try:
+#            self.client.password(password)
+#            self.log.debug("MPD Auth accepted!")
+#        except Exception as e:
+#            self.log.exception("MPD Auth error: {}".format(e))
+#            pass
 
     def show_notification(self,
                           summary=None,
@@ -152,7 +156,7 @@ class MpNotd(object):
             message = ""
 
         if not icon:
-            icon = "image-missing"
+            icon = path.join(self.paths["run"], "images/mpnotd.svg")
 
         notify2.init(summary)
         popup = notify2.Notification(summary, message, icon)
@@ -229,7 +233,7 @@ class MpNotd(object):
 
         return [url, artist, album]
 
-    def idle_loop(self):
+    def mpd_events(self):
         """Display notifications for changes to MPD subsystems
         """
 
@@ -249,8 +253,10 @@ class MpNotd(object):
 
             for subsys in subsystems:
                 self.log.debug("Subsys: {}".format(subsys))
-                data["summary"] = self.name
-                data["icon"] = "rhythmbox-panel"
+                data["summary"] = self.config["host"]
+                data["icon"] = path.join(
+                        self.paths["run"],
+                        "images/mpnotd.svg")
 
                 # Player state changed
                 if subsys == "player":
@@ -266,13 +272,17 @@ class MpNotd(object):
                     # Player paused
                     if state == "pause":
                         data["message"] = "<i>Playback paused...</i>"
-                        data["icon"] = "rhythmbox-notplaying"
+                        data["icon"] = path.join(
+                            self.paths["run"],
+                            "images/mpnotd.svg")
                         self.show_notification(**data)
 
                     # Player stopped
                     elif state == "stop":
                         data["message"] = "<i>Playback stopped...</i>"
-                        data["icon"] = "rhythmbox-notplaying"
+                        data["icon"] = path.join(
+                            self.paths["run"],
+                            "images/mpnotd.svg")
                         self._status = None
                         self.show_notification(**data)
 
@@ -304,11 +314,15 @@ class MpNotd(object):
 
                     if self.updating:
                         data["message"] = "Database updated!"
-                        data["icon"] = "checkbox-checked"
+                        data["icon"] = path.join(
+                            self.paths["run"],
+                            "images/mpnotd.svg")
                         self.updating = False
                     else:
                         data["message"] = "Updating database..."
-                        data["icon"] = "content-loading"
+                        data["icon"] = path.join(
+                            self.paths["run"],
+                            "images/mpnotd.svg")
                         self.updating = True
 
                     self.log.debug(data["message"])
