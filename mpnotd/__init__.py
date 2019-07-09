@@ -96,7 +96,7 @@ class MpNotd(object):
             sys.exit(1)
 
         # Close MPD connection
-        quit_client()
+        quit_client(self)
 
 #    def get_client(self):
 #        """Setup MPD connection
