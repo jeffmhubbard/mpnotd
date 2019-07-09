@@ -98,40 +98,6 @@ class MpNotd(object):
         # Close MPD connection
         quit_client(self)
 
-#    def get_client(self):
-#        """Setup MPD connection
-#        """
-#
-#        host = self.config["host"]
-#        port = self.config["port"]
-#
-#        self.client = MPDClient()
-#        self.client.connect(host, port)
-#        self.log.debug("MPD connection established!")
-#
-#    def quit_client(self):
-#        """End MPD connection
-#        """
-#
-#        self.client.close()
-#        self.client.disconnect()
-#        self.log.debug("MPD connection closed!")
-#
-#    def auth_client(self, password):
-#        """Authenticate to MPD server
-#
-#        Args:
-#            password (str): Plain text password
-#
-#        """
-#
-#        try:
-#            self.client.password(password)
-#            self.log.debug("MPD Auth accepted!")
-#        except Exception as e:
-#            self.log.exception("MPD Auth error: {}".format(e))
-#            pass
-
     def show_notification(self,
                           summary=None,
                           message=None,
