@@ -13,6 +13,7 @@ from .artwork import get_albumart
 from .client import get_client, auth_client, quit_client
 from .utils import clean_cache, get_logger
 from .utils import load_config, read_args, write_config
+from .cavacolor import cava_color, cava_xcolor
 
 APP_NAME = "mpnotd"
 APP_DESC = "MPD Notification Daemon"
@@ -37,10 +38,12 @@ DEFAULTS = {
     "time": 10,
     # Path to music folder
     "music": "~/Music/",
+    # CAVA color 0 no, 1 yes, 2 custom
+    "cava": 0,
 }
 
 
-class MpNotd(object):
+class MpNotd:
 
     # Load defaults
     name = APP_NAME
@@ -93,10 +96,8 @@ class MpNotd(object):
         except Exception as e:
             self.log.debug(e, exc_info=True)
         except (KeyboardInterrupt, SystemExit):
+            quit_client(self)
             sys.exit(1)
-
-        # Close MPD connection
-        quit_client(self)
 
     def show_notification(self,
                           summary=None,
@@ -210,7 +211,7 @@ class MpNotd(object):
         while True:
 
             # Clean cached artwork
-            clean_cache(self.paths, self.log)
+            clean_cache(self.paths["cache"], self.log)
 
             data = {}
 
@@ -264,6 +265,12 @@ class MpNotd(object):
                             # Show Notification
                             data = self.get_nowplaying(**song)
                             self.show_notification(**data)
+
+                            # set CAVA color
+                            if int(self.config["cava"]) == 1:
+                                cava_color(data["icon"])
+                            elif int(self.config["cava"]) == 2:
+                                cava_xcolor(data["icon"])
 
                             # Cache album art for next song
                             try:

@@ -6,6 +6,8 @@ import argparse
 import configparser
 import errno
 import logging
+import re
+import string
 import sys
 import time
 from os import listdir, makedirs, path, remove
@@ -97,6 +99,21 @@ def get_logger(paths, debug):
     return log
 
 
+def get_valid_str(text):
+    """Get valid strings for filenames
+
+    Args:
+        text (str): String to make valid
+
+    Returns:
+        Return string containing valid file path characters
+    """
+
+    vchar = "-_.()[] %s%s" % (string.ascii_letters, string.digits)
+    text = re.sub(' ', '_', text)
+    return ''.join(c for c in text if c in vchar)
+
+
 def _makedirs(dest):
     """Create directories for target file
 
@@ -115,17 +132,19 @@ def _makedirs(dest):
                 raise
 
 
-def clean_cache(paths, log, limit=100):
+def clean_cache(dirname, log, limit=100):
     """Remove cached images
 
     Args:
+        dirname (str): Path to image cache
+        log (obj): Logger for debug
         limit (int): Number of hours to keep cached image
 
     """
 
     limit *= 3600
 
-    tmp_dir = paths["cache"]
+    tmp_dir = dirname
     use_by = time.time() - limit
     log.debug("Cache Age: {}".format(use_by))
 
