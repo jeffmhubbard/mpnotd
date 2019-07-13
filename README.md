@@ -10,6 +10,8 @@ python-mpd2
 notify2  
 beautifulsoup4   
 Pillow  
+colorthief
+colormath
   
 ### Recommended
 dunst  

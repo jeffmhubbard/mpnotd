@@ -5,29 +5,29 @@
 from mpd import MPDClient
 
 
-def get_client(parent):
+def get_client(config, log):
     """Setup MPD connection
     """
 
-    host = parent.config["host"]
-    port = parent.config["port"]
+    host = config["host"]
+    port = config["port"]
 
     client = MPDClient()
     client.connect(host, port)
-    parent.log.debug("MPD connection established!")
+    log.debug("MPD connection established!")
     return client
 
 
-def quit_client(parent):
+def quit_client(client, log):
     """End MPD connection
     """
 
-    parent.client.close()
-    parent.client.disconnect()
-    parent.log.debug("MPD connection closed!")
+    client.close()
+    client.disconnect()
+    log.debug("MPD connection closed!")
 
 
-def auth_client(parent, password):
+def auth_client(client, password, log):
     """Authenticate to MPD server
 
     Args:
@@ -36,7 +36,7 @@ def auth_client(parent, password):
     """
 
     try:
-        parent.client.password(password)
-        parent.log.debug("MPD Auth accepted!")
-    except Exception as e:
-        parent.log.exception("MPD Auth error: {}".format(e))
+        client.password(password)
+        log.debug("MPD Auth accepted!")
+    except Exception as auth_err:
+        log.exception("MPD Auth error: {}".format(auth_err))

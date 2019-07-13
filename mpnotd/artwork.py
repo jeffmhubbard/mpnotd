@@ -5,16 +5,18 @@
 import json
 from glob import glob
 from os import path, remove
-from re import sub
 from shutil import copyfile
+from urllib.error import HTTPError, URLError
 from urllib.parse import quote
 from urllib.request import Request, urlopen, urlretrieve
 
 from bs4 import BeautifulSoup
 from PIL import Image
 
+from .utils import get_valid_str
 
-def get_albumart(parent, url, artist, album):
+
+def get_albumart(paths, config, url, artist, album, log):
     """Get album art thumbnail
 
     Attempt to find album art and thumbnail it
@@ -32,17 +34,20 @@ def get_albumart(parent, url, artist, album):
 
     """
 
+    cachedir = paths["cache"]
+    musicdir = config["music"]
+
     # Temp file
-    tmp_file = path.join(parent.paths["cache"], "artwork.tmp")
-    if path.exists(tmp_file):
-        remove(tmp_file)
-        parent.log.debug("Purge tmp: {}".format(tmp_file))
+    tmpfile = path.join(cachedir, "artwork.tmp")
+    if path.exists(tmpfile):
+        remove(tmpfile)
+        log.debug("Purge tmp: {}".format(tmpfile))
 
     # Get destination file path
     filename = "cover-{}-{}.png".format(artist, album)
-    filename = sub(r" ", "_", filename).lower()
-    filepath = path.join(parent.paths["cache"], filename)
-    parent.log.debug("Cache Dest: {}".format(filepath))
+    filename = get_valid_str(filename).lower()
+    filepath = path.join(cachedir, filename)
+    log.debug("Cache Dest: {}".format(filepath))
 
     # Save as thumbnail
     def _mkthumb(in_file, out_file):
@@ -52,22 +57,22 @@ def get_albumart(parent, url, artist, album):
 
     # Check for cached image first
     if path.exists(filepath):
-        parent.log.debug("Found image: {}".format(filepath))
+        log.debug("Found image: {}".format(filepath))
 
     # Try to find image in local path (even for streams... who knows)
-    elif find_image(parent, tmp_file, url, artist, album):
-        parent.log.debug("Searching filesystem")
-        _mkthumb(tmp_file, filepath)
+    elif find_image(musicdir, url, tmpfile, log, artist, album):
+        log.debug("Searching filesystem")
+        _mkthumb(tmpfile, filepath)
 
     # If not, search google
-    elif fetch_image(parent, tmp_file, artist, album):
-        parent.log.debug("Searching web")
-        _mkthumb(tmp_file, filepath)
+    elif fetch_image(tmpfile, artist, album, log):
+        log.debug("Searching web")
+        _mkthumb(tmpfile, filepath)
 
     return filepath
 
 
-def find_image(parent, temp, url, artist=None, album=None):
+def find_image(musicdir, url, tempfile, log, artist=None, album=None):
     """Search filesystem for artwork
 
     If `url` starts with HTTP, we assume we're streaming and
@@ -83,18 +88,15 @@ def find_image(parent, temp, url, artist=None, album=None):
         Return True if local image cached
     """
 
-    # Build search path
-    music_dir = path.expanduser(parent.config["music"])
-
     # If streaming... Guess!
     if url.startswith("http"):
-        base_dir = path.join(music_dir, artist, album)
+        base_dir = path.join(musicdir, artist, album)
 
-    # If local, use it
+    # If local, look there
     else:
-        base_dir = path.dirname(path.join(music_dir, url))
+        base_dir = path.dirname(path.join(musicdir, url))
 
-    parent.log.debug("Search path: {}".format(base_dir))
+    log.debug("Search path: {}".format(base_dir))
 
     if path.exists(base_dir):
         # Search for matching extensions
@@ -103,15 +105,15 @@ def find_image(parent, temp, url, artist=None, album=None):
 
             # Return first match
             if img_match:
-                copyfile(img_match[0], temp)
-                parent.log.debug("Local image found: {}".format(img_match[0]))
+                copyfile(img_match[0], tempfile)
+                log.debug("Local image found: {}".format(img_match[0]))
 
                 return True
 
     return False
 
 
-def fetch_image(parent, temp, artist, album):
+def fetch_image(tempfile, artist, album, log):
     """Search web for artwork
 
     This is slow but easy and free
@@ -138,15 +140,28 @@ def fetch_image(parent, temp, artist, album):
     }
 
     # Return search results
-    results = BeautifulSoup(urlopen(Request(search_url, headers=search_agent)),
-                            "html.parser")
+    try:
+        results = BeautifulSoup(
+            urlopen(
+                Request(search_url, headers=search_agent)),
+            "html.parser")
+
+    except HTTPError as http_err:
+        if http_err.code == 404:
+            print("Page not found!")
+            log.debug(http_err.code)
+        elif http_err.code == 403:
+            print("Access forbidden!")
+            log.debug(http_err.code)
+    except URLError as url_err:
+        print("URL Error: %s" % url_err.reason)
 
     # Find image on page
     img_div = results.find("div", {"class": "rg_meta"})
     img_url = json.loads(img_div.text)["ou"]
 
-    if urlretrieve(img_url, temp):
-        parent.log.debug("Search image found: {}".format(temp))
+    if urlretrieve(img_url, tempfile):
+        log.debug("Search image found: {}".format(tempfile))
 
         return True
 

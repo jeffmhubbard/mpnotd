@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-"""CAVA Color
+""" CAVA Color
 """
 
 import fileinput
@@ -14,34 +14,16 @@ from colormath.color_conversions import convert_color
 from colormath.color_diff import delta_e_cie2000
 from colormath.color_objects import LabColor, sRGBColor
 
-CONFIG = path.expanduser("~/.config/cava/config")
-
-TERM_COLORS = {
-    "black": "#000000",
-    "dark_red": "#c23621",
-    "dark_green": "#25bc24",
-    "dark_yellow": "#adad27",
-    "dark_blue": "#492ee1",
-    "dark_magenta": "#d338d3",
-    "dark_cyan": "#33bbc8",
-    "grey": "#cbcccd",
-    "dark_grey": "#818383",
-    "red": "#fc391f",
-    "green": "#31e722",
-    "yellow": "#eaec23",
-    "blue": "#5833ff",
-    "magenta": "#f935f8",
-    "cyan": "#14f0f0",
-    "white": "#e9ebeb",
-}
+CAVA_CFG = path.expanduser("~/.config/cava/config")
 
 
 def cava_color(icon):
 
-    """Set CAVA color with dominant color from artwork
+    """ Set CAVA color with dominant color from artwork
     """
 
     artwork = path.expanduser(icon)
+    print(artwork)
 
     if path.exists(artwork):
 
@@ -55,50 +37,48 @@ def cava_color(icon):
             art_color[2])
 
         # write to config
-        update_config(CONFIG, hex_color)
+        update_config(CAVA_CFG, hex_color)
 
         # read config
         restart_cava()
 
 
-def cava_xcolor(icon):
+def cava_color_term(image, term_colors):
 
-    """Set CAVA color with nearest color in TERM_COLORS
-        This is pretty unpredictable and is mostly  for fun
-        TERM_COLORS key names are unimportant, and can be
-        antyhing
+    """ Set CAVA color with nearest color in term_colors
     """
 
-    artwork = path.expanduser(icon)
+    artwork = path.expanduser(image)
+    palette = term_colors.split(",")
 
     if path.exists(artwork):
 
         # get dominant color
-        art_color = get_artwork_color(artwork)
+        dom_color = get_artwork_color(artwork)
 
-        # return closest
-        palette_color = get_palette_color(art_color)
+        # return closest palette match
+        color_match = get_palette_match(dom_color, palette)
 
         # write to config
-        update_config(CONFIG, palette_color)
+        update_config(CAVA_CFG, color_match)
 
         # read config
         restart_cava()
 
 
-def get_artwork_color(icon):
+def get_artwork_color(image):
 
-    """docstring
+    """ Return dominant color from image
     """
 
-    icon = ColorThief(icon)
+    image = ColorThief(image)
 
-    return icon.get_color(quality=1)
+    return image.get_color(quality=1)
 
 
-def get_palette_color(color):
+def get_palette_match(color, palette):
 
-    """docstring
+    """ Return palette color closest to given color
     """
 
     color1_rgb = sRGBColor(*color)
@@ -106,7 +86,7 @@ def get_palette_color(color):
 
     results = []
 
-    for name, hcolor in TERM_COLORS.items():
+    for hcolor in palette:
 
         color2 = tuple(
             int(hcolor.strip("#")[i:i + 2], 16) for i in (0, 2, 4))
@@ -123,7 +103,7 @@ def get_palette_color(color):
 
 def update_config(config, color):
 
-    """docstring
+    """ Find and replace `foreground` in CAVA_CFG
     """
 
     if path.exists(config):
@@ -134,5 +114,8 @@ def update_config(config, color):
 
 
 def restart_cava():
-    subprocess.run(["pkill", "-USR2", "cava"])
 
+    """ Force CAVA to read config and redraw
+    """
+
+    subprocess.run(["pkill", "-USR2", "cava"])

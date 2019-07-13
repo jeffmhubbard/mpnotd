@@ -33,18 +33,16 @@ def read_args(name, desc):
     return parser.parse_args(sys.argv[1:])
 
 
-def load_config(name, paths, defaults):
+def load_config(name, inifile, defaults):
     """Load user config
     """
 
     config = {}
 
     # Override from user config
-    fname = path.join(paths["config"], "config")
-
-    if path.exists(fname):
+    if path.exists(inifile):
         uconf = configparser.ConfigParser(defaults)
-        uconf.read(fname)
+        uconf.read(inifile)
 
         # All keys are required for valid config
         for cvar in defaults.keys():
@@ -53,42 +51,37 @@ def load_config(name, paths, defaults):
     return config
 
 
-def write_config(name, paths, defaults):
+def write_config(name, inifile, defaults):
     """Write config file with defaults
     """
 
-    filename = path.join(paths["config"], "config")
-
     # Config already exists, print location
-    if path.exists(filename):
-        print("File exists! {}".format(filename))
+    if path.exists(inifile):
+        print("File exists! {}".format(inifile))
     else:
         # Check for directory and create
-        _makedirs(filename)
+        _makedirs(inifile)
 
         # Create parser and import defaults
         default_conf = configparser.ConfigParser()
         default_conf[name] = defaults
 
         # Write config
-        with open(filename, "w") as new_conf:
+        with open(inifile, "w") as new_conf:
             default_conf.write(new_conf)
-            print("Config written to {}".format(filename))
+            print("Config written to {}".format(inifile))
 
 
-def get_logger(paths, debug):
+def get_logger(logfile, debug):
     """Setup logging
     """
-
-    log_to = path.join(paths["cache"], "debug.log")
-
-    if not path.exists(log_to):
-        _makedirs(log_to)
+    if not path.exists(logfile):
+        _makedirs(logfile)
 
     logging.basicConfig(
         format="%(asctime)s %(message)s",
         datefmt="%m/%d/%Y %I:%M:%S %p",
-        filename=log_to,
+        filename=logfile,
         filemode="w",
     )
     log = logging.getLogger()
@@ -132,11 +125,11 @@ def _makedirs(dest):
                 raise
 
 
-def clean_cache(dirname, log, limit=100):
+def clean_cache(cachedir, log, limit=100):
     """Remove cached images
 
     Args:
-        dirname (str): Path to image cache
+        cachedir (str): Path to image cache
         log (obj): Logger for debug
         limit (int): Number of hours to keep cached image
 
@@ -144,12 +137,11 @@ def clean_cache(dirname, log, limit=100):
 
     limit *= 3600
 
-    tmp_dir = dirname
     use_by = time.time() - limit
     log.debug("Cache Age: {}".format(use_by))
 
-    for filename in listdir(tmp_dir):
-        filepath = path.join(tmp_dir, filename)
+    for filename in listdir(cachedir):
+        filepath = path.join(cachedir, filename)
 
         if filepath.endswith(".png") and path.getatime(filepath) < use_by:
             log.debug("Removing: {}".format(filepath))

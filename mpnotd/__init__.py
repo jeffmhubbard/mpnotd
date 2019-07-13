@@ -2,7 +2,7 @@
 
 # -*- coding: utf-8 -*-
 
-# mpnotd - MPD Notification Daemon
+# MpNotd - MPD Notification Daemon
 
 import sys
 from os import path
@@ -13,7 +13,7 @@ from .artwork import get_albumart
 from .client import get_client, auth_client, quit_client
 from .utils import clean_cache, get_logger
 from .utils import load_config, read_args, write_config
-from .cavacolor import cava_color, cava_xcolor
+from .cavacolor import cava_color, cava_color_term
 
 APP_NAME = "mpnotd"
 APP_DESC = "MPD Notification Daemon"
@@ -21,7 +21,7 @@ APP_DIRS = {
     "cache": path.join(path.expanduser("~/.cache"), APP_NAME),
     "config": path.join(path.expanduser("~/.config"), APP_NAME),
     "plugins": path.join(path.expanduser("~/.config"), APP_NAME, "plugins"),
-    "run": path.dirname(path.realpath(__file__)),
+    "runpath": path.dirname(path.realpath(__file__)),
 }
 
 DEBUG = False
@@ -40,22 +40,27 @@ DEFAULTS = {
     "music": "~/Music/",
     # CAVA color 0 no, 1 yes, 2 custom
     "cava": 0,
+    # list of hex colors for cava 2, comma separated
+    "term_colors": "#ff0000,#00ff00,#0000ff"
 }
 
 
 class MpNotd:
 
     # Load defaults
+    config = DEFAULTS
+    paths = APP_DIRS
     name = APP_NAME
     desc = APP_DESC
-    paths = APP_DIRS
-    config = DEFAULTS
+    icon = path.join(paths["runpath"], "images/mpnotd.svg")
     updating = False
 
     def __init__(self, auth=None, debug=False):
-        """MPD Notification Daemon
+
+        """ MPD Notification Daemon
 
         Args:
+            auth (str): Password string or None
             debug (bool): Log debug messages
 
         """
@@ -63,25 +68,28 @@ class MpNotd:
         # Parse command line arguments
         self.args = read_args(self.name, self.desc)
 
-        # Write config and quit
-        if self.args.writeini:
-            write_config(self.name, self.paths, self.config)
-            sys.exit(0)
-
         # Enable debugging messages
         if self.args.DEBUG or debug:
             global DEBUG
             DEBUG = True
 
+        self.inifile = path.join(self.paths["config"], "config")
+
+        # Write config and quit
+        if self.args.writeini:
+            write_config(self.name, self.inifile, DEFAULTS)
+            sys.exit(0)
+
         # Load user config
-        self.config = load_config(self.name, self.paths, self.config)
+        self.config = load_config(self.name, self.inifile, self.config)
 
         # Start logging
-        self.log = get_logger(self.paths, DEBUG)
+        logfile = path.join(self.paths["cache"], "debug.log")
+        self.log = get_logger(logfile, DEBUG)
         self.log.debug(u"\u2500" * 50)
 
         # Open MPD connection
-        self.client = get_client(self)
+        self.client = get_client(self.config, self.log)
 
         # If auth passed as arg, overwrite config
         if auth is not None:
@@ -89,14 +97,14 @@ class MpNotd:
 
         # Send password if set (untested)
         if not self.config["auth"] == "":
-            auth_client(self)
+            auth_client(self.client, self.config["auth"], self.log)
 
         try:
             self.mpd_events()
         except Exception as e:
             self.log.debug(e, exc_info=True)
         except (KeyboardInterrupt, SystemExit):
-            quit_client(self)
+            quit_client(self.client, self.log)
             sys.exit(1)
 
     def show_notification(self,
@@ -104,7 +112,8 @@ class MpNotd:
                           message=None,
                           icon=None,
                           **kwargs):
-        """Display notification
+
+        """ Display notification
 
         Build notification. Defaults are provided below so show_notification()
         can be called with any number of arguments or even none.
@@ -117,13 +126,13 @@ class MpNotd:
 
         # Defaults
         if not summary:
-            summary = self.name
+            summary = self.host
 
         if not message:
-            message = ""
+            message = self.name
 
         if not icon:
-            icon = path.join(self.paths["run"], "images/mpnotd.svg")
+            icon = self.icon
 
         notify2.init(summary)
         popup = notify2.Notification(summary, message, icon)
@@ -138,7 +147,7 @@ class MpNotd:
         popup.show()
 
     def get_nowplaying(self, title, artist, album, **kwargs):
-        """Get current song info
+        """ Get current song info
 
         Args:
             title (str): Song title
@@ -160,7 +169,14 @@ class MpNotd:
 
         # Get album art
         try:
-            icon = get_albumart(self, kwargs["file"], artist, album)
+            icon = get_albumart(
+                    self.paths,
+                    self.config,
+                    kwargs["file"],
+                    artist,
+                    album,
+                    self.log)
+
         except Exception as e:
             self.log.debug(e)
             raise
@@ -175,16 +191,16 @@ class MpNotd:
         return data
 
     def get_nextsong(self, status):
-        """Get next song info
+        """ Get next song info
 
-        Get next song info so we can precache album art
-        Returns list suitable for get_albumart(*args)
+            Get next song info so we can precache album art
+            Returns list suitable for get_albumart(*args)
 
-        Args:
-            status (dict): current status
+            Args:
+                status (dict): current status
 
-        Returns:
-            Returns list (url, artist, album)
+            Returns:
+                Returns list (url, artist, album)
 
         """
 
@@ -201,7 +217,7 @@ class MpNotd:
         return [url, artist, album]
 
     def mpd_events(self):
-        """Display notifications for changes to MPD subsystems
+        """ Display notifications for changes to MPD subsystems
         """
 
         # Get initial status and outputs
@@ -221,9 +237,7 @@ class MpNotd:
             for subsys in subsystems:
                 self.log.debug("Subsys: {}".format(subsys))
                 data["summary"] = self.config["host"]
-                data["icon"] = path.join(
-                        self.paths["run"],
-                        "images/mpnotd.svg")
+                data["icon"] = self.icon
 
                 # Player state changed
                 if subsys == "player":
@@ -239,17 +253,13 @@ class MpNotd:
                     # Player paused
                     if state == "pause":
                         data["message"] = "<i>Playback paused...</i>"
-                        data["icon"] = path.join(
-                            self.paths["run"],
-                            "images/mpnotd.svg")
+                        data["icon"] = self.icon
                         self.show_notification(**data)
 
                     # Player stopped
                     elif state == "stop":
                         data["message"] = "<i>Playback stopped...</i>"
-                        data["icon"] = path.join(
-                            self.paths["run"],
-                            "images/mpnotd.svg")
+                        data["icon"] = self.icon
                         self._status = None
                         self.show_notification(**data)
 
@@ -270,12 +280,18 @@ class MpNotd:
                             if int(self.config["cava"]) == 1:
                                 cava_color(data["icon"])
                             elif int(self.config["cava"]) == 2:
-                                cava_xcolor(data["icon"])
+                                cava_color_term(
+                                        data["icon"],
+                                        self.config["term_colors"])
 
                             # Cache album art for next song
                             try:
                                 nextsong = self.get_nextsong(status)
-                                get_albumart(self, *nextsong)
+                                get_albumart(
+                                        self.paths,
+                                        self.config,
+                                        *nextsong,
+                                        self.log)
                             except Exception:
                                 pass
 
@@ -287,15 +303,11 @@ class MpNotd:
 
                     if self.updating:
                         data["message"] = "Database updated!"
-                        data["icon"] = path.join(
-                            self.paths["run"],
-                            "images/mpnotd.svg")
+                        data["icon"] = "checkbox-checked"
                         self.updating = False
                     else:
                         data["message"] = "Updating database..."
-                        data["icon"] = path.join(
-                            self.paths["run"],
-                            "images/mpnotd.svg")
+                        data["icon"] = "content-loading"
                         self.updating = True
 
                     self.log.debug(data["message"])
