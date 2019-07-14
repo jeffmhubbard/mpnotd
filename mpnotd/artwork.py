@@ -16,7 +16,7 @@ from PIL import Image
 from .utils import get_valid_str
 
 
-def get_albumart(paths, config, url, artist, album, log):
+def cache_artwork(cachedir, musicdir, log, url, artist, album):
     """Get album art thumbnail
 
     Attempt to find album art and thumbnail it
@@ -34,9 +34,6 @@ def get_albumart(paths, config, url, artist, album, log):
 
     """
 
-    cachedir = paths["cache"]
-    musicdir = config["music"]
-
     # Temp file
     tmpfile = path.join(cachedir, "artwork.tmp")
     if path.exists(tmpfile):
@@ -48,12 +45,6 @@ def get_albumart(paths, config, url, artist, album, log):
     filename = get_valid_str(filename).lower()
     filepath = path.join(cachedir, filename)
     log.debug("Cache Dest: {}".format(filepath))
-
-    # Save as thumbnail
-    def _mkthumb(in_file, out_file):
-        image = Image.open(in_file)
-        image.thumbnail((96, 96))
-        image.save(out_file)
 
     # Check for cached image first
     if path.exists(filepath):
@@ -70,6 +61,16 @@ def get_albumart(paths, config, url, artist, album, log):
         _mkthumb(tmpfile, filepath)
 
     return filepath
+
+
+def _mkthumb(in_file, out_file):
+
+    """ Make thumbnail
+    """
+
+    image = Image.open(in_file)
+    image.thumbnail((96, 96))
+    image.save(out_file)
 
 
 def find_image(musicdir, url, tempfile, log, artist=None, album=None):
@@ -148,13 +149,11 @@ def fetch_image(tempfile, artist, album, log):
 
     except HTTPError as http_err:
         if http_err.code == 404:
-            print("Page not found!")
             log.debug(http_err.code)
         elif http_err.code == 403:
-            print("Access forbidden!")
             log.debug(http_err.code)
     except URLError as url_err:
-        print("URL Error: %s" % url_err.reason)
+        log.debug(url_err.reason)
 
     # Find image on page
     img_div = results.find("div", {"class": "rg_meta"})

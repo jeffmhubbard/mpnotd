@@ -13,10 +13,12 @@ setup(
     install_requires=[
         'python-mpd2',
         'notify2',
+        'dbus-python',
         'beautifulsoup4',
         'bs4',
-        'dbus-python',
         'pillow',
+        'colormath',
+        'colorthief',
     ],
     zip_safe=False,
     include_package_data=True,

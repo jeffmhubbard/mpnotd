@@ -2,18 +2,19 @@
 
 # -*- coding: utf-8 -*-
 
-# MpNotd - MPD Notification Daemon
+# MPDNotify - MPD Notification Daemon
 
 import sys
 from os import path
 
 import notify2
 
-from .artwork import get_albumart
-from .client import get_client, auth_client, quit_client
-from .utils import clean_cache, get_logger
-from .utils import load_config, read_args, write_config
-from .cavacolor import cava_color, cava_color_term
+from .artwork import cache_artwork
+from .cavacolor import CavaColor
+from .client import (auth_client, get_client, quit_client,
+                     get_currentsong, get_nextsong)
+from .utils import (clean_cache, get_logger, load_config, read_args,
+                    write_config)
 
 APP_NAME = "mpnotd"
 APP_DESC = "MPD Notification Daemon"
@@ -35,17 +36,17 @@ DEFAULTS = {
     # Password (leave blank for no password)
     "auth": "",
     # Notification timeout in seconds
-    "time": 10,
+    "timeout": 10,
     # Path to music folder
     "music": "~/Music/",
     # CAVA color 0 no, 1 yes, 2 custom
     "cava": 0,
     # list of hex colors for cava 2, comma separated
-    "term_colors": "#ff0000,#00ff00,#0000ff"
+    "cava_colors": "#ff0000,#00ff00,#0000ff",
 }
 
 
-class MpNotd:
+class MPDNotify:
 
     # Load defaults
     config = DEFAULTS
@@ -53,10 +54,8 @@ class MpNotd:
     name = APP_NAME
     desc = APP_DESC
     icon = path.join(paths["runpath"], "images/mpnotd.svg")
-    updating = False
 
     def __init__(self, auth=None, debug=False):
-
         """ MPD Notification Daemon
 
         Args:
@@ -101,124 +100,17 @@ class MpNotd:
 
         try:
             self.mpd_events()
-        except Exception as e:
-            self.log.debug(e, exc_info=True)
         except (KeyboardInterrupt, SystemExit):
             quit_client(self.client, self.log)
             sys.exit(1)
 
-    def show_notification(self,
-                          summary=None,
-                          message=None,
-                          icon=None,
-                          **kwargs):
-
-        """ Display notification
-
-        Build notification. Defaults are provided below so show_notification()
-        can be called with any number of arguments or even none.
-
-        Args:
-            summary (str): Notification title
-            message (str): Notification body
-            icon (str): Album art or icon
-        """
-
-        # Defaults
-        if not summary:
-            summary = self.host
-
-        if not message:
-            message = self.name
-
-        if not icon:
-            icon = self.icon
-
-        notify2.init(summary)
-        popup = notify2.Notification(summary, message, icon)
-
-        # Set timeout
-        timeout = self.config["time"]
-
-        if timeout:
-            popup.set_timeout(int(timeout) * 1000)
-
-        # Display
-        popup.show()
-
-    def get_nowplaying(self, title, artist, album, **kwargs):
-        """ Get current song info
-
-        Args:
-            title (str): Song title
-            artist (str): Song artist
-            album (str): Song album
-
-        Returns:
-            Return `data` payload for show_notification()
-
-        """
-
-        data = {}
-
-        # Format summary and message
-        summary = "Playing..."
-        message = "<b>{}</b>\nBy <b>{}</b>\nFrom <b>{}</b>".format(
-            title, artist, album)
-        icon = None
-
-        # Get album art
-        try:
-            icon = get_albumart(
-                    self.paths,
-                    self.config,
-                    kwargs["file"],
-                    artist,
-                    album,
-                    self.log)
-
-        except Exception as e:
-            self.log.debug(e)
-            raise
-
-        # Build notification payload
-        data["summary"] = summary
-        data["message"] = message
-        data["icon"] = icon
-
-        self.log.debug("Now Playing: {}".format(data))
-
-        return data
-
-    def get_nextsong(self, status):
-        """ Get next song info
-
-            Get next song info so we can precache album art
-            Returns list suitable for get_albumart(*args)
-
-            Args:
-                status (dict): current status
-
-            Returns:
-                Returns list (url, artist, album)
-
-        """
-
-        next_id = status["nextsongid"]
-        song = self.client.playlistid(next_id)[0]
-        url = song["file"]
-
-        if "name" in song:
-            artist, title, album = song["name"].split(" - ")
-        else:
-            artist = song["artist"]
-            album = song["album"]
-
-        return [url, artist, album]
-
     def mpd_events(self):
         """ Display notifications for changes to MPD subsystems
         """
+
+        cachedir = self.paths["cache"]
+        musicdir = self.config["music"]
+        hostname = self.config["host"]
 
         # Get initial status and outputs
         _status = self.client.status()
@@ -227,17 +119,15 @@ class MpNotd:
         while True:
 
             # Clean cached artwork
-            clean_cache(self.paths["cache"], self.log)
+            clean_cache(cachedir, self.log)
 
-            data = {}
+            data = {"summary": hostname}
 
             # Watch MPDClient.idle for changes
             subsystems = self.client.idle("player", "update", "output")
 
             for subsys in subsystems:
                 self.log.debug("Subsys: {}".format(subsys))
-                data["summary"] = self.config["host"]
-                data["icon"] = self.icon
 
                 # Player state changed
                 if subsys == "player":
@@ -252,48 +142,64 @@ class MpNotd:
 
                     # Player paused
                     if state == "pause":
+
                         data["message"] = "<i>Playback paused...</i>"
                         data["icon"] = self.icon
-                        self.show_notification(**data)
+
+                        Notification(**data)
 
                     # Player stopped
                     elif state == "stop":
+
                         data["message"] = "<i>Playback stopped...</i>"
                         data["icon"] = self.icon
                         self._status = None
-                        self.show_notification(**data)
+
+                        Notification(**data)
 
                     # Show current song
                     elif state == "play" or _status["songid"] != status[
                             "songid"]:
-                        song = self.client.currentsong()
+
+                        current = get_currentsong(self.client)
 
                         # Only show after tag data is read
-                        if all(key in song
+                        if all(key in current
                                for key in ("artist", "title", "album")):
 
+                            # cache album art
+                            artwork = cache_artwork(
+                                cachedir,
+                                musicdir,
+                                self.log,
+                                current['file'],
+                                current['artist'],
+                                current['album'])
+
+                            # notifcation payload
+                            data["summary"] = "Playing..."
+                            data["message"] = "<b>{}</b>\nBy <b>{}</b>\nFrom <b>{}</b>".format(
+                                    current['title'],
+                                    current['artist'],
+                                    current['album'])
+                            data["icon"] = artwork
+
                             # Show Notification
-                            data = self.get_nowplaying(**song)
-                            self.show_notification(**data)
+                            Notification(**data)
 
                             # set CAVA color
-                            if int(self.config["cava"]) == 1:
-                                cava_color(data["icon"])
-                            elif int(self.config["cava"]) == 2:
-                                cava_color_term(
-                                        data["icon"],
-                                        self.config["term_colors"])
+                            if int(self.config["cava"]) > 0:
+                                CavaColor(self.config, artwork)
 
                             # Cache album art for next song
-                            try:
-                                nextsong = self.get_nextsong(status)
-                                get_albumart(
-                                        self.paths,
-                                        self.config,
-                                        *nextsong,
-                                        self.log)
-                            except Exception:
-                                pass
+                            nextsong = get_nextsong(self.client, status)
+                            cache_artwork(
+                                cachedir,
+                                musicdir,
+                                self.log,
+                                nextsong['file'],
+                                nextsong['artist'],
+                                nextsong['album'])
 
                     # Save status
                     _status = status
@@ -310,8 +216,8 @@ class MpNotd:
                         data["icon"] = "content-loading"
                         self.updating = True
 
+                    Notification(**data)
                     self.log.debug(data["message"])
-                    self.show_notification(**data)
 
                 # Outputs changed
                 elif subsys == "output":
@@ -330,13 +236,28 @@ class MpNotd:
                                     out["outputname"])
                                 data["icon"] = "dialog-error"
 
+                            Notification(**data)
                             self.log.debug(data["message"])
-                            self.show_notification(**data)
 
                     _outputs = outputs
 
 
+class Notification:
+
+    def __init__(self,
+                 summary=None,
+                 message=None,
+                 icon=None,
+                 timeout=10,
+                 **kwargs):
+
+        notify2.init(summary)
+        popup = notify2.Notification(summary, message, icon)
+        popup.set_timeout(int(timeout) * 1000)
+        popup.show()
+
+
 if __name__ == "__main__":
-    MpNotd()
+    MPDNotify()
 
 # vim: set ft=python

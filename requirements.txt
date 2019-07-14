@@ -3,3 +3,6 @@ bs4==0.0.1
 dbus-python==1.2.8
 notify2==0.3.1
 python-mpd2==1.0.0
+colormath==3.0.0
+colorthief==0.2.1
+Pillow==6.1.0
