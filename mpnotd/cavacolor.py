@@ -61,7 +61,7 @@ class CavaColor:
 
     def set_palette_color(self, image, palette):
 
-        """ Set CAVA color with nearest color in `colors`
+        """ Set CAVA color with nearest color in `palette`
         """
 
         artwork = path.expanduser(image)

@@ -11,8 +11,8 @@ import notify2
 
 from .artwork import cache_artwork
 from .cavacolor import CavaColor
-from .client import (auth_client, get_client, quit_client,
-                     get_currentsong, get_nextsong)
+from .client import (auth_client, get_client, get_currentsong, get_nextsong,
+                     quit_client)
 from .utils import (clean_cache, get_logger, load_config, read_args,
                     write_config)
 
@@ -48,7 +48,6 @@ DEFAULTS = {
 
 class MPDNotify:
 
-    # Load defaults
     config = DEFAULTS
     paths = APP_DIRS
     name = APP_NAME
@@ -74,7 +73,7 @@ class MPDNotify:
 
         self.inifile = path.join(self.paths["config"], "config")
 
-        # Write config and quit
+        # If writeini pass, write config and quit
         if self.args.writeini:
             write_config(self.name, self.inifile, DEFAULTS)
             sys.exit(0)
@@ -98,6 +97,7 @@ class MPDNotify:
         if not self.config["auth"] == "":
             auth_client(self.client, self.config["auth"], self.log)
 
+        # Start loop
         try:
             self.mpd_events()
         except (KeyboardInterrupt, SystemExit):
@@ -111,6 +111,7 @@ class MPDNotify:
         cachedir = self.paths["cache"]
         musicdir = self.config["music"]
         hostname = self.config["host"]
+        icon = self.icon
 
         # Get initial status and outputs
         _status = self.client.status()
@@ -121,7 +122,7 @@ class MPDNotify:
             # Clean cached artwork
             clean_cache(cachedir, self.log)
 
-            data = {"summary": hostname}
+            data = {"summary": hostname, "icon": icon}
 
             # Watch MPDClient.idle for changes
             subsystems = self.client.idle("player", "update", "output")
@@ -172,16 +173,17 @@ class MPDNotify:
                                 cachedir,
                                 musicdir,
                                 self.log,
-                                current['file'],
-                                current['artist'],
-                                current['album'])
+                                current["file"],
+                                current["artist"],
+                                current["album"],
+                            )
 
                             # notifcation payload
                             data["summary"] = "Playing..."
-                            data["message"] = "<b>{}</b>\nBy <b>{}</b>\nFrom <b>{}</b>".format(
-                                    current['title'],
-                                    current['artist'],
-                                    current['album'])
+                            data[
+                                "message"] = "<b>{}</b>\nBy <b>{}</b>\nFrom <b>{}</b>".format(
+                                    current["title"], current["artist"],
+                                    current["album"])
                             data["icon"] = artwork
 
                             # Show Notification
@@ -197,9 +199,10 @@ class MPDNotify:
                                 cachedir,
                                 musicdir,
                                 self.log,
-                                nextsong['file'],
-                                nextsong['artist'],
-                                nextsong['album'])
+                                nextsong["file"],
+                                nextsong["artist"],
+                                nextsong["album"],
+                            )
 
                     # Save status
                     _status = status

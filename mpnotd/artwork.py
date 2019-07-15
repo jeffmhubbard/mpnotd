@@ -25,6 +25,9 @@ def cache_artwork(cachedir, musicdir, log, url, artist, album):
     Or else fetch_image() searches web
 
     Args:
+        cachedir (str): Path to cached artwork
+        musicdir (str): Path to music directory
+        log (obj): The logger
         url (str): MPD database path or http url
         artist (str): Song artist
         album (str): Song ablum
@@ -51,12 +54,12 @@ def cache_artwork(cachedir, musicdir, log, url, artist, album):
         log.debug("Found image: {}".format(filepath))
 
     # Try to find image in local path (even for streams... who knows)
-    elif find_image(musicdir, url, tmpfile, log, artist, album):
+    elif find_image(musicdir, tmpfile, log, url, artist, album):
         log.debug("Searching filesystem")
         _mkthumb(tmpfile, filepath)
 
     # If not, search google
-    elif fetch_image(tmpfile, artist, album, log):
+    elif fetch_image(tmpfile, log, artist, album):
         log.debug("Searching web")
         _mkthumb(tmpfile, filepath)
 
@@ -73,7 +76,7 @@ def _mkthumb(in_file, out_file):
     image.save(out_file)
 
 
-def find_image(musicdir, url, tempfile, log, artist=None, album=None):
+def find_image(musicdir, tmpfile, log, url, artist=None, album=None):
     """Search filesystem for artwork
 
     If `url` starts with HTTP, we assume we're streaming and
@@ -81,6 +84,7 @@ def find_image(musicdir, url, tempfile, log, artist=None, album=None):
     If `url` is a local path, just look in the same directory
 
     Args:
+        musicdir (str): Path to music directory
         url (str): file path or web address
         artist (str): artist name
         album (str): album name
@@ -106,7 +110,7 @@ def find_image(musicdir, url, tempfile, log, artist=None, album=None):
 
             # Return first match
             if img_match:
-                copyfile(img_match[0], tempfile)
+                copyfile(img_match[0], tmpfile)
                 log.debug("Local image found: {}".format(img_match[0]))
 
                 return True
@@ -114,7 +118,7 @@ def find_image(musicdir, url, tempfile, log, artist=None, album=None):
     return False
 
 
-def fetch_image(tempfile, artist, album, log):
+def fetch_image(tmpfile, log, artist, album):
     """Search web for artwork
 
     This is slow but easy and free
@@ -159,8 +163,8 @@ def fetch_image(tempfile, artist, album, log):
     img_div = results.find("div", {"class": "rg_meta"})
     img_url = json.loads(img_div.text)["ou"]
 
-    if urlretrieve(img_url, tempfile):
-        log.debug("Search image found: {}".format(tempfile))
+    if urlretrieve(img_url, tmpfile):
+        log.debug("Search image found: {}".format(tmpfile))
 
         return True
 

@@ -7,7 +7,7 @@ from mpd import MPDClient, MPDError, ConnectionError
 
 
 def get_client(config, log):
-    """Setup MPD connection
+    """ Setup MPD connection, return `client`
     """
 
     host = config["host"]
@@ -26,14 +26,14 @@ def get_client(config, log):
 
 
 def get_currentsong(client):
-    """ Return current song
+    """ Return current song dict
     """
 
     return client.currentsong()
 
 
 def get_nextsong(client, status):
-    """ Return next song
+    """ Return next song dict
     """
 
     next_id = status["nextsongid"]
