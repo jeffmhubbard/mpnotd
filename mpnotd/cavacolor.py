@@ -1,6 +1,6 @@
 # -*- coding: utf-8 -*-
 
-""" CAVA Color
+""" Change CAVA's foreground color based on album art
 """
 
 import fileinput
@@ -16,13 +16,26 @@ from colormath.color_objects import LabColor, sRGBColor
 
 CAVA_CFG = path.expanduser("~/.config/cava/config")
 
+# minimum config dict needed
+# config = {
+#         # 0 disabled, 1 dominant color, 2 palette color
+#         "cava": 2,
+#         # terminal palette (or list of any colors)
+#         "cava_colors": "#ff0000,#00ff00,#0000ff",
+#         }
+
 
 class CavaColor:
 
-    """ CavaColor
-    """
-
     def __init__(self, config, image=None):
+
+        """ CavaColor
+
+        Args:
+            config (dict): Dict containing `cava` and `cava_colors`
+            image (str): Path to album art
+
+        """
 
         self.enabled = config["cava"]
         self.palette = config["cava_colors"]
@@ -98,6 +111,7 @@ class CavaColor:
 
         results = []
 
+        # iterate palette and make list of results (dist, match)
         for hcolor in palette:
 
             color2 = tuple(
@@ -108,8 +122,8 @@ class CavaColor:
             delta_e = delta_e_cie2000(color1_lab, color2_lab)
             results.append((int(delta_e), hcolor))
 
+        # sort results and return first item (least distance)
         results.sort()
-
         return results[0][1]
 
     def update_config(self, config, color):
