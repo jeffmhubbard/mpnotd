@@ -17,9 +17,14 @@ Pillow
 colorthief
 colormath
   
-### Recommended
+### Recommended  
 dunst  
-CAVA
+CAVA  
+  
+### Installation  
+  
+Arch Linux (AUR):  
+`auracle download -r mpnotd-git`  
   
 ### Usage  
 To start from terminal or application launcher:  
